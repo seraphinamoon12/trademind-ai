@@ -13,6 +13,25 @@ from src.langgraph.nodes.data_nodes import fetch_market_data
 
 # ============ CONDITIONAL EDGE FUNCTIONS ============
 
+
+def route_error(state: TradingState) -> Literal["continue", "retry", "end"]:
+    """
+    Route based on error state.
+
+    Returns:
+        - "continue": No error, proceed normally
+        - "retry": Error occurred, retry if under limit
+        - "end": Error occurred, max retries reached
+    """
+    error = state.get("error")
+    retry_count = state.get("retry_count", 0)
+
+    if error:
+        if retry_count < 3:
+            return "retry"
+        return "end"
+    return "continue"
+
 def should_debate(state: TradingState) -> Literal["debate", "skip_debate"]:
     """
     Determine if debate protocol should run.
@@ -61,7 +80,8 @@ def should_retry(state: TradingState) -> Literal["retry", "end"]:
 
 # ============ GRAPH CONSTRUCTION ============
 
-def create_trading_graph() -> StateGraph:
+
+async def create_trading_graph() -> StateGraph:
     """
     Create and compile the complete trading workflow graph.
 
@@ -87,6 +107,17 @@ def create_trading_graph() -> StateGraph:
 
     # Linear flow: START → fetch_data
     graph.add_edge(START, "fetch_data")
+
+    # Error handling after fetch_data
+    graph.add_conditional_edges(
+        "fetch_data",
+        route_error,
+        {
+            "continue": "technical",  # Or next node
+            "retry": "fetch_data",    # Retry same node
+            "end": END                # Give up
+        }
+    )
 
     # Parallel analysis: fetch_data → technical & sentiment
     # graph.add_edge("fetch_data", "technical")
@@ -156,7 +187,7 @@ def create_trading_graph() -> StateGraph:
     # ========== COMPILE GRAPH ==========
 
     # Get checkpointer for persistence
-    checkpointer = get_checkpointer()
+    checkpointer = await get_checkpointer()
 
     # Compile with optional debug mode for LangSmith tracing
     compiled = graph.compile(
@@ -166,6 +197,14 @@ def create_trading_graph() -> StateGraph:
 
     return compiled
 
-# ========== SINGLETON INSTANCE ==========
+# ========== GRAPH FACTORY ==========
 
-trading_graph = create_trading_graph()
+
+async def get_trading_graph() -> StateGraph:
+    """
+    Get or create the trading workflow graph.
+
+    Returns:
+        Compiled LangGraph StateGraph ready for execution
+    """
+    return await create_trading_graph()

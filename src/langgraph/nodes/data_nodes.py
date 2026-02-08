@@ -1,13 +1,13 @@
 """Nodes for data fetching in the LangGraph workflow."""
 
-from datetime import datetime
-from typing import Dict, Any
+from datetime import datetime, timezone
 from src.langgraph.state import TradingState
+from src.langgraph.types import FetchMarketDataOutput
 from src.data.providers import yfinance_provider
 from src.data.indicators import TechnicalIndicators
 
 
-async def fetch_market_data(state: TradingState) -> Dict[str, Any]:
+async def fetch_market_data(state: TradingState) -> FetchMarketDataOutput:
     """
     Fetch market data from yfinance and calculate technical indicators.
 
@@ -30,8 +30,8 @@ async def fetch_market_data(state: TradingState) -> Dict[str, Any]:
         return {
             "market_data": data.to_dict(),
             "technical_indicators": indicators,
-            "timestamp": datetime.utcnow().isoformat(),
-            "workflow_id": state.get("workflow_id", f"{symbol}_{int(datetime.utcnow().timestamp())}"),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "workflow_id": state.get("workflow_id", f"{symbol}_{int(datetime.now(timezone.utc).timestamp())}"),
             "iteration": state.get("iteration", 0),
             "current_node": "fetch_market_data"
         }

@@ -6,6 +6,24 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph import add_messages
 
 
+def merge_dicts(left, right):
+    """Merge two dictionaries, right takes precedence."""
+    if left is None:
+        return right or {}
+    if right is None:
+        return left
+    return {**left, **right}
+
+
+def merge_lists(left, right):
+    """Merge two lists."""
+    if left is None:
+        return right or []
+    if right is None:
+        return left
+    return left + right
+
+
 class TradingState(TypedDict):
     """
     Shared state for all trading agents in LangGraph workflow.
@@ -19,22 +37,22 @@ class TradingState(TypedDict):
     timeframe: str
 
     # ===== Market Data =====
-    market_data: Optional[Dict[str, Any]]
-    technical_indicators: Optional[Dict[str, Any]]
+    market_data: Annotated[dict, merge_dicts]
+    technical_indicators: Annotated[dict, merge_dicts]
 
     # ===== Agent Signals =====
-    technical_signals: Optional[Dict[str, Any]]
-    sentiment_signals: Optional[Dict[str, Any]]
-    risk_signals: Optional[Dict[str, Any]]
-    debate_result: Optional[Dict[str, Any]]
+    technical_signals: Annotated[dict, merge_dicts]
+    sentiment_signals: Annotated[dict, merge_dicts]
+    risk_signals: Annotated[dict, merge_dicts]
+    debate_result: Annotated[dict, merge_dicts]
 
     # ===== Decision =====
-    final_decision: Optional[Dict[str, Any]]
+    final_decision: Annotated[dict, merge_dicts]
     final_action: Optional[Literal["BUY", "SELL", "HOLD"]]
     confidence: float
 
     # ===== Execution =====
-    executed_trade: Optional[Dict[str, Any]]
+    executed_trade: Annotated[dict, merge_dicts]
     order_id: Optional[str]
 
     # ===== Human Feedback =====
