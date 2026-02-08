@@ -1,0 +1,49 @@
+# Interactive Brokers Configuration
+
+# Connection Settings
+ibkr:
+  enabled: false
+  host: "127.0.0.1"
+  port: 7497  # 7497 for paper trading, 7496 for live trading
+  client_id: 1
+  account: ""  # Leave empty to use default account
+  paper_trading: true  # Set to false for live trading
+
+# Order Settings
+order:
+  default_type: "market"  # market, limit, stop, stop_limit
+  timeout_seconds: 30
+  retry_attempts: 3
+  retry_delay_seconds: 1
+
+# Risk Management
+risk:
+  max_order_value: 10000.0  # Maximum order value in USD
+  max_daily_orders: 100  # Maximum number of orders per day
+  position_size_limit_pct: 0.10  # Maximum position size as % of portfolio
+
+# Data Subscription
+market_data:
+  enable: true
+  snapshot_data: false  # Set to true to reduce data fees
+  real_time_bars: false  # Enable real-time bar data
+  delayed_data: true  # Use delayed data (15-minute delay) to avoid fees
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_order_events: true
+  log_market_data: false
+
+# Trading Hours
+trading_hours:
+  use_ibkr_schedule: true  # Use IBKR's trading schedule
+  custom_open: "09:30"
+  custom_close: "16:00"
+  timezone: "America/New_York"
+
+# Reconnection
+reconnection:
+  auto_reconnect: true
+  max_retries: 5
+  retry_delay_seconds: 5

@@ -1,6 +1,8 @@
 """Configuration management for Trading Agent."""
 import os
 from typing import List, Optional
+import yaml
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -103,10 +105,61 @@ class Settings(BaseSettings):
     
     # OpenAI (for sentiment agent)
     openai_api_key: Optional[str] = Field(default=None)
-    
+
+    # IBKR Configuration
+    ibkr_enabled: bool = Field(default=False)
+    ibkr_host: str = Field(default="127.0.0.1")
+    ibkr_port: int = Field(default=7497)
+    ibkr_client_id: int = Field(default=1)
+    ibkr_account: Optional[str] = Field(default=None)
+    ibkr_paper_trading: bool = Field(default=True)
+    ibkr_order_timeout: int = Field(default=30)
+    ibkr_max_order_value: float = Field(default=10000.0)
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
 
 
+def load_ibkr_config(config_path: Optional[str] = None) -> dict:
+    """
+    Load IBKR configuration from YAML file.
+
+    Args:
+        config_path: Path to config file. If None, uses default path.
+
+    Returns:
+        Dictionary with IBKR configuration
+    """
+    if config_path is None:
+        config_path = str(Path(__file__).parent.parent / "config" / "ibkr_config.yaml")
+
+    try:
+        with open(config_path, 'r') as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        raise RuntimeError(f"Failed to load IBKR config: {e}")
+
+
 settings = Settings()
+
+# Load IBKR config into environment variables
+ibkr_config = load_ibkr_config()
+if ibkr_config and 'ibkr' in ibkr_config:
+    ibkr_cfg = ibkr_config['ibkr']
+    settings.ibkr_enabled = ibkr_cfg.get('enabled', settings.ibkr_enabled)
+    settings.ibkr_host = ibkr_cfg.get('host', settings.ibkr_host)
+    settings.ibkr_port = ibkr_cfg.get('port', settings.ibkr_port)
+    settings.ibkr_client_id = ibkr_cfg.get('client_id', settings.ibkr_client_id)
+    settings.ibkr_account = ibkr_cfg.get('account', settings.ibkr_account)
+    settings.ibkr_paper_trading = ibkr_cfg.get('paper_trading', settings.ibkr_paper_trading)
+
+if ibkr_config and 'order' in ibkr_config:
+    order_cfg = ibkr_config['order']
+    settings.ibkr_order_timeout = order_cfg.get('timeout_seconds', settings.ibkr_order_timeout)
+
+if ibkr_config and 'risk' in ibkr_config:
+    risk_cfg = ibkr_config['risk']
+    settings.ibkr_max_order_value = risk_cfg.get('max_order_value', settings.ibkr_max_order_value)
