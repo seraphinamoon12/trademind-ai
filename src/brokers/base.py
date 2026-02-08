@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Callable
 
 
 class OrderStatus(Enum):
@@ -133,4 +133,17 @@ class BaseBroker(ABC):
     @abstractmethod
     async def validate_order(self, order: Order) -> Tuple[bool, str]:
         """Validate if an order can be placed."""
+        pass
+
+    @abstractmethod
+    async def get_historical_bars(
+        self,
+        symbol: str,
+        duration: str,
+        bar_size: str,
+        what_to_show: str = "TRADES",
+        use_rth: bool = True,
+        end_date: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get historical OHLCV bars."""
         pass

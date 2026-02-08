@@ -4,40 +4,48 @@
 ibkr:
   enabled: false
   host: "127.0.0.1"
-  port: 7497  # 7497 for paper trading, 7496 for live trading
+  port: 7497
   client_id: 1
-  account: ""  # Leave empty to use default account
-  paper_trading: true  # Set to false for live trading
+  account: ""
+  paper_trading: true
 
 # Order Settings
 order:
-  default_type: "market"  # market, limit, stop, stop_limit
+  default_type: "market"
   timeout_seconds: 30
   retry_attempts: 3
   retry_delay_seconds: 1
 
 # Risk Management
 risk:
-  max_order_value: 10000.0  # Maximum order value in USD
-  max_daily_orders: 100  # Maximum number of orders per day
-  position_size_limit_pct: 0.10  # Maximum position size as % of portfolio
+  max_order_size: 1000
+  max_order_value: 50000
+  max_daily_orders: 100
+  max_position_pct: 0.10
+  max_sector_pct: 0.25
+  position_size_limit_pct: 0.10
+  daily_loss_limit: 1000
+  max_open_orders: 10
 
 # Data Subscription
 market_data:
   enable: true
-  snapshot_data: false  # Set to true to reduce data fees
-  real_time_bars: false  # Enable real-time bar data
-  delayed_data: true  # Use delayed data (15-minute delay) to avoid fees
+  snapshot_data: false
+  real_time_bars: false
+  delayed_data: true
+  historical_data_type: "TRADES"
+  default_bar_size: "1 min"
+  max_historical_days: 365
 
 # Logging
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
   log_order_events: true
   log_market_data: false
 
 # Trading Hours
 trading_hours:
-  use_ibkr_schedule: true  # Use IBKR's trading schedule
+  use_ibkr_schedule: true
   custom_open: "09:30"
   custom_close: "16:00"
   timezone: "America/New_York"

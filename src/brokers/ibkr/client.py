@@ -1,6 +1,7 @@
 """Interactive Brokers broker implementation using ib_insync."""
 import asyncio
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Callable
+from datetime import datetime
 import logging
 
 try:
@@ -51,6 +52,7 @@ class IBKRBroker(BaseBroker):
         self._orders: Dict[str, Order] = {}
         self._tickers: Dict[str, Any] = {}
         self._account_values: Dict[str, Any] = {}
+        self._realtime_bars: Dict[str, Tuple[Any, Callable]] = {}
 
     async def connect(self) -> None:
         """Establish connection to IBKR TWS or Gateway."""
@@ -86,6 +88,50 @@ class IBKRBroker(BaseBroker):
             await self.ib.disconnectAsync()
             self._connected = False
             logger.info("Disconnected from IBKR")
+
+    async def connect_with_retry(
+        self,
+        max_retries: int = 5,
+        retry_delay: int = 5
+    ) -> bool:
+        """
+        Connect with automatic retry logic.
+
+        Args:
+            max_retries: Maximum number of connection attempts
+            retry_delay: Seconds between retries
+
+        Returns:
+            True if connected successfully
+        """
+        for attempt in range(max_retries):
+            try:
+                await self.connect()
+                return True
+            except Exception as e:
+                logger.warning(f"Connection attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+        
+        raise ConnectionError(f"Failed to connect after {max_retries} attempts")
+
+    def _setup_reconnection_callbacks(self):
+        """Setup callbacks for automatic reconnection on disconnect."""
+        self.ib.disconnectedEvent += self._on_disconnect
+
+    def _on_disconnect(self):
+        """Handle disconnection event."""
+        logger.warning("IBKR connection lost")
+        self._connected = False
+        asyncio.create_task(self._attempt_reconnection())
+
+    async def _attempt_reconnection(self):
+        """Attempt to reconnect in background."""
+        try:
+            await self.connect_with_retry(max_retries=3, retry_delay=10)
+            logger.info("Successfully reconnected to IBKR")
+        except Exception as e:
+            logger.error(f"Reconnection failed: {e}")
 
     async def place_order(self, order: Order) -> str:
         """Place an order and return order ID."""
@@ -456,3 +502,190 @@ class IBKRBroker(BaseBroker):
             "bid_size": ticker.bidSize,
             "ask_size": ticker.askSize
         }
+
+    async def get_historical_bars(
+        self,
+        symbol: str,
+        duration: str = "1 D",
+        bar_size: str = "1 min",
+        what_to_show: str = "TRADES",
+        use_rth: bool = True,
+        end_date: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get historical OHLCV bars for a symbol.
+
+        Returns list of dicts with:
+        - date: datetime
+        - open, high, low, close: float
+        - volume: int
+        - average: float
+        """
+        if not self.is_connected:
+            raise ConnectionError("Not connected to IBKR")
+
+        contract = Stock(symbol, self.exchange, self.currency)
+
+        bars = await self.ib.reqHistoricalDataAsync(
+            contract,
+            endDateTime=end_date or '',
+            durationStr=duration,
+            barSizeSetting=bar_size,
+            whatToShow=what_to_show,
+            useRTH=use_rth,
+            formatDate=1,
+            keepUpToDate=False
+        )
+
+        result = []
+        for bar in bars:
+            bar_date = bar.date
+            if isinstance(bar_date, str):
+                try:
+                    bar_date = datetime.strptime(bar_date, "%Y%m%d %H:%M:%S")
+                except ValueError:
+                    bar_date = datetime.strptime(bar_date.split()[0], "%Y%m%d")
+
+            result.append({
+                "date": bar_date,
+                "open": bar.open,
+                "high": bar.high,
+                "low": bar.low,
+                "close": bar.close,
+                "volume": bar.volume,
+                "average": bar.average
+            })
+
+        return result
+
+    async def get_historical_bars_paginated(
+        self,
+        symbol: str,
+        start_date: datetime,
+        end_date: Optional[datetime] = None,
+        bar_size: str = "1 min"
+    ) -> List[Dict[str, Any]]:
+        """
+        Get historical data over extended period using pagination.
+        IBKR limits to ~1 week of 1-min data per request.
+        This method automatically makes multiple requests.
+        """
+        if not self.is_connected:
+            raise ConnectionError("Not connected to IBKR")
+
+        bars_list = []
+        dt = end_date.strftime("%Y%m%d-%H:%M:%S") if end_date else ''
+
+        while True:
+            bars = await self.ib.reqHistoricalDataAsync(
+                Stock(symbol, self.exchange, self.currency),
+                endDateTime=dt,
+                durationStr='10 D',
+                barSizeSetting=bar_size,
+                whatToShow='TRADES',
+                useRTH=True,
+                formatDate=1,
+                keepUpToDate=False
+            )
+
+            if not bars:
+                break
+
+            for bar in bars:
+                bar_date = bar.date
+                if isinstance(bar_date, str):
+                    try:
+                        bar_date = datetime.strptime(bar_date, "%Y%m%d %H:%M:%S")
+                    except ValueError:
+                        bar_date = datetime.strptime(bar_date.split()[0], "%Y%m%d")
+
+                bars_list.append({
+                    "date": bar_date,
+                    "open": bar.open,
+                    "high": bar.high,
+                    "low": bar.low,
+                    "close": bar.close,
+                    "volume": bar.volume,
+                    "average": bar.average
+                })
+
+                if bar_date <= start_date:
+                    dt = None
+                    break
+
+            if dt is None:
+                break
+
+            dt = bars[0].date
+            if isinstance(dt, datetime):
+                dt = dt.strftime("%Y%m%d-%H:%M:%S")
+
+        return sorted(bars_list, key=lambda x: x["date"])
+
+    async def subscribe_realtime_bars(
+        self,
+        symbol: str,
+        callback: Callable[[Dict], None]
+    ) -> None:
+        """
+        Subscribe to 5-second real-time bars.
+        Calls callback with each new bar.
+        """
+        if not self.is_connected:
+            raise ConnectionError("Not connected to IBKR")
+
+        contract = Stock(symbol, self.exchange, self.currency)
+
+        async def on_bar_update(bars, has_new_bar):
+            if has_new_bar and len(bars) > 0:
+                bar = bars[-1]
+                callback({
+                    "symbol": symbol,
+                    "date": bar.date,
+                    "open": bar.open,
+                    "high": bar.high,
+                    "low": bar.low,
+                    "close": bar.close,
+                    "volume": bar.volume,
+                    "average": bar.average
+                })
+
+        bars = await self.ib.reqRealTimeBarsAsync(contract, 5, 'TRADES', False)
+        bars.updateEvent += on_bar_update
+
+        self._realtime_bars[symbol] = (bars, callback)
+        logger.info(f"Subscribed to real-time bars for {symbol}")
+
+    def unsubscribe_realtime_bars(self, symbol: str) -> None:
+        """Unsubscribe from real-time bars."""
+        if symbol in self._realtime_bars:
+            bars, _ = self._realtime_bars[symbol]
+            self.ib.cancelRealTimeBars(bars)
+            del self._realtime_bars[symbol]
+            logger.info(f"Unsubscribed from real-time bars for {symbol}")
+
+    async def get_fundamental_data(
+        self,
+        symbol: str,
+        report_type: str = "ReportsFinSummary"
+    ) -> Optional[str]:
+        """
+        Get fundamental data (financial statements, ratios).
+
+        report_type options:
+        - 'ReportsFinSummary' - Financial summary
+        - 'ReportsOwnership' - Ownership details
+        - 'ReportSnapshot' - Company snapshot
+        - 'ReportsFinStatements' - Financial statements
+        """
+        if not self.is_connected:
+            raise ConnectionError("Not connected to IBKR")
+
+        contract = Stock(symbol, self.exchange, self.currency)
+
+        try:
+            data = await self.ib.reqFundamentalDataAsync(contract, report_type)
+            return data
+        except Exception as e:
+            logger.error(f"Failed to get fundamental data for {symbol}: {e}")
+            return None
