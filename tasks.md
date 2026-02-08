@@ -158,3 +158,196 @@
 
 *Created: 2026-02-07*  
 *Based on: OpenCode code review of sentiment agent implementation*
+
+---
+
+## Phase 1: Foundation Tasks
+
+- [ ] Project structure with proper separation
+- [ ] TimescaleDB setup for time-series data
+- [ ] yfinance integration with caching
+- [ ] Technical indicator library (pandas-ta)
+- [ ] Event bus with Redis Pub/Sub
+- [ ] Basic portfolio tracker (in-memory → DB)
+- [ ] Rule-based strategy: RSI Mean Reversion
+- [ ] Rule-based strategy: Moving Average Crossover
+
+**Deliverable**: Can fetch data, calculate indicators, run backtests
+
+---
+
+## Phase 2: Strategy Engine Tasks
+
+- [ ] Backtrader integration for backtesting
+- [ ] 3+ rule-based strategies with parameters
+- [ ] Realistic backtesting (slippage, latency simulation)
+- [ ] Walk-forward analysis
+- [ ] Paper trading execution engine
+- [ ] Trade logging with reasoning
+- [ ] Performance metrics (Sharpe, max drawdown, win rate)
+
+**Deliverable**: Backtest shows realistic results, paper trading active
+
+---
+
+## Phase 3: AI Integration Tasks
+
+- [ ] Sentiment agent with news analysis
+- [ ] Strategy selection agent (chooses which rule-based strategy to use)
+- [ ] Meta-strategy: Combine multiple rule-based signals
+- [ ] Agent reasoning logging and explainability
+- [ ] A/B testing: Compare rule-based vs AI-hybrid
+
+**Deliverable**: AI enhances but doesn't replace rule-based strategies
+
+---
+
+## Phase 4: Dashboard & Polish Tasks
+
+- [ ] FastAPI + HTMX dashboard
+- [ ] Real-time portfolio updates (WebSocket or SSE)
+- [ ] Performance charts with Plotly
+- [ ] Strategy configuration UI
+- [ ] Agent activity monitor
+- [ ] Docker + deployment
+
+**Deliverable**: Full web application, deployed and running
+
+---
+
+## Next Steps (Starting Phase 1)
+
+1. ✅ Project folder created: `~/projects/trading-agent/`
+2. 🔄 Set up Python environment (venv + dependencies)
+3. 🔄 Initialize database (TimescaleDB via Docker)
+4. 🔄 Create project structure
+5. 🔄 Build market data ingestion pipeline
+6. 🔄 Implement first strategy (RSI Mean Reversion)
+
+---
+
+## Safety Infrastructure Improvements
+
+### Potential Enhancements (Future Work)
+
+#### 1. Advanced Risk Metrics
+- **Value at Risk (VaR)** calculation
+- **Conditional VaR (CVaR)** implementation
+- **Beta-adjusted position sizing**
+- **Correlation matrix analysis** for portfolio risk
+
+#### 2. Dynamic Safety Parameters
+- **Adaptive circuit breaker thresholds** based on market volatility
+- **Dynamic position limits** adjusted by market conditions
+- **Time-based risk scaling** (reduce exposure during volatile periods)
+- **Machine learning-based risk prediction**
+
+#### 3. Enhanced Monitoring
+- **Real-time anomaly detection** in trading patterns
+- **Strategy drift monitoring** (detect when strategy degrades)
+- **Live dashboard alerts** with push notifications
+- **Automated reporting generation** (daily/weekly risk reports)
+
+#### 4. Backtesting Safety Rules
+- **Historical stress testing** of safety parameters
+- **Monte Carlo simulations** for worst-case scenarios
+- **Strategy safety validation** before deployment
+- **Circuit breaker performance analysis** on historical data
+
+#### 5. Additional Safety Layers
+- **Pre-trade credit checks** for real money accounts
+- **Order validation** (duplicate detection, size limits)
+- **Position-level stop-loss automation**
+- **Automated position reduction** on adverse market events
+
+#### 6. Regulatory Compliance
+- **Trade reporting** for audit trails
+- **Position reporting** requirements
+- **Pattern day trading** rules integration
+- **SEC/FINRA compliance** checks
+
+#### 7. Testing & Validation
+- **Comprehensive safety test suite**
+- **Integration tests** for all safety components
+- **Performance benchmarking** of safety checks
+- **Chaos engineering** for failure scenarios
+
+---
+
+## Database Schema Tasks
+
+- [ ] Implement TimescaleDB hypertable for market_data
+- [ ] Create indicators table with technical analysis values
+- [ ] Create trades table with agent_signals JSONB field
+- [ ] Create portfolio_snapshots table for historical tracking
+- [ ] Create holdings table for current positions
+- [ ] Create agent_decisions table for audit trail
+- [ ] Add indexes for performance optimization
+- [ ] Set up automatic data partitioning
+
+---
+
+## Micro-Agent Implementation Tasks
+
+### Technical Analysis Agent
+- [ ] Implement base agent class
+- [ ] Add RSI calculation logic
+- [ ] Add MACD calculation logic
+- [ ] Add Moving Average calculations
+- [ ] Add Bollinger Bands calculation
+- [ ] Implement signal generation with confidence scores
+
+### Sentiment Agent
+- [ ] Implement news fetching from multiple sources
+- [ ] Add LLM-based sentiment analysis
+- [ ] Implement sentiment caching (15-30 min TTL)
+- [ ] Add fallback to momentum-based sentiment
+- [ ] Implement confidence scoring
+- [ ] Add multi-timeframe sentiment analysis
+
+### Risk Agent
+- [ ] Implement position size validation
+- [ ] Add sector concentration checks
+- [ ] Implement stop-loss/take-profit logic
+- [ ] Add correlation-based position limits
+- [ ] Implement Kelly Criterion sizing
+- [ ] Add daily loss limit enforcement
+
+### Portfolio Agent
+- [ ] Implement portfolio state management
+- [ ] Add rebalancing logic
+- [ ] Implement allocation tracking
+- [ ] Add performance metrics calculation
+- [ ] Implement position heat tracking
+- [ ] Add automated rebalancing triggers
+
+### Orchestrator
+- [ ] Implement weighted voting mechanism
+- [ ] Add signal combination logic
+- [ ] Implement veto override for risk agent
+- [ ] Add decision logging with reasoning
+- [ ] Implement confidence aggregation
+- [ ] Add A/B testing framework
+
+---
+
+## Configuration Management Tasks
+
+- [ ] Create config.yaml with all parameters
+- [ ] Implement environment-specific configs (dev/staging/prod)
+- [ ] Add configuration validation
+- [ ] Implement secure secrets management
+- [ ] Add hot-reload for config changes
+- [ ] Document all configuration parameters
+
+---
+
+## Testing Strategy Tasks
+
+- [ ] Unit tests for all agents
+- [ ] Integration tests for event bus
+- [ ] Database migration tests
+- [ ] Backtesting accuracy tests
+- [ ] Safety rule validation tests
+- [ ] Load testing for API endpoints
+- [ ] End-to-end trading simulation tests
