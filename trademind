@@ -1,0 +1,11 @@
+#!/bin/bash
+# TradeMind CLI wrapper script
+# Usage: ./trademind [command] [options]
+
+PROJECT_DIR="$HOME/projects/trading-agent"
+VENV_DIR="$PROJECT_DIR/venv"
+
+# Activate virtual environment and run CLI
+source "$VENV_DIR/bin/activate"
+export TRADEMIND_API_URL="${TRADEMIND_API_URL:-http://localhost:8000}"
+python -m cli.main "$@"

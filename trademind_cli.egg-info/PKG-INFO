@@ -1,0 +1,260 @@
+Metadata-Version: 2.4
+Name: trademind-cli
+Version: 1.0.0
+Summary: Command-line interface for TradeMind AI trading agent
+Home-page: https://github.com/trademind/trading-agent
+Author: TradeMind AI
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Financial and Insurance Industry
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Topic :: Office/Business :: Financial :: Investment
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: click>=8.0.0
+Requires-Dist: requests>=2.28.0
+Requires-Dist: tabulate>=0.9.0
+Requires-Dist: rich>=13.0.0
+Requires-Dist: pyyaml>=6.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0; extra == "dev"
+Requires-Dist: black>=23.0; extra == "dev"
+Requires-Dist: flake8>=6.0; extra == "dev"
+Dynamic: author
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# TradeMind AI - Trading Agent
+
+An AI-powered autonomous trading system with rule-based strategies (RSI Mean Reversion, MA Crossover) using an event-driven micro-agent architecture.
+
+## Features
+
+- **Rule-Based Strategies**: RSI Mean Reversion and Moving Average Crossover
+- **Multi-Agent System**: Technical Analysis Agent + Risk Management Agent
+- **Real-time Market Data**: Yahoo Finance integration with TimescaleDB storage
+- **Backtesting Engine**: Backtrader-based with slippage and commission simulation
+- **FastAPI Backend**: RESTful API with HTMX dashboard
+- **Redis Event Bus**: Pub/sub for agent communication
+- **Risk Management**: Position sizing, stop losses, drawdown limits
+
+## Architecture
+
+```
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ Market Data  │  │ Technical    │  │    Risk      │
+│ Ingestion    │──│ Analysis     │──│   Agent      │
+└──────────────┘  └──────────────┘  └──────────────┘
+       │                   │                 │
+       ▼                   ▼                 ▼
+┌──────────────────────────────────────────────────┐
+│            EVENT BUS (Redis Pub/Sub)             │
+└──────────────────────────────────────────────────┘
+       │                   │                 │
+       ▼                   ▼                 ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ Portfolio    │  │  Execution   │  │   FastAPI    │
+│ Manager      │  │   Engine     │  │   + HTMX     │
+└──────────────┘  └──────────────┘  └──────────────┘
+```
+
+## Quick Start
+
+### 1. Start the Infrastructure
+
+```bash
+cd ~/projects/trading-agent
+
+# Start TimescaleDB and Redis
+docker compose up -d
+
+# Verify containers are running
+docker compose ps
+```
+
+### 2. Initialize Database
+
+```bash
+source venv/bin/activate
+python init_db.py
+```
+
+### 3. Run Tests
+
+```bash
+python test_components.py
+```
+
+### 4. Start the Server
+
+```bash
+# Option 1: Use the startup script
+./start.sh
+
+# Option 2: Manual start
+uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### 5. Access the Application
+
+- **Dashboard**: http://localhost:8000/
+- **Backtest Page**: http://localhost:8000/backtest
+- **API Health**: http://localhost:8000/health
+- **API Docs**: http://localhost:8000/docs
+
+## API Endpoints
+
+### Portfolio
+- `GET /api/portfolio/` - Get portfolio summary
+- `GET /api/portfolio/holdings` - Get current holdings
+- `POST /api/portfolio/update-prices` - Update prices
+- `GET /api/portfolio/performance?days=30` - Get performance history
+
+### Trades
+- `GET /api/trades/?limit=50` - Get trade history
+- `POST /api/trades/` - Execute manual trade
+
+### Strategies
+- `GET /api/strategies/` - List available strategies
+- `POST /api/strategies/signal?symbol=AAPL&strategy=rsi` - Get signal
+- `POST /api/strategies/backtest` - Run backtest
+
+### Agent
+- `GET /api/agent/decisions` - Get agent decision history
+- `POST /api/agent/analyze/{symbol}` - Run agent analysis
+
+## Strategies
+
+### RSI Mean Reversion
+- **Buy**: When RSI < 30 (oversold)
+- **Sell**: When RSI > 70 (overbought)
+- **Parameters**: period=14, oversold=30, overbought=70
+
+### MA Crossover
+- **Buy**: Golden Cross (50 MA crosses above 200 MA)
+- **Sell**: Death Cross (50 MA crosses below 200 MA)
+- **Parameters**: fast_period=50, slow_period=200
+
+## Backtesting
+
+Run a backtest via API:
+
+```bash
+curl -X POST http://localhost:8000/api/strategies/backtest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "AAPL",
+    "strategy": "rsi",
+    "initial_cash": 100000
+  }'
+```
+
+Results include:
+- Total Return
+- Sharpe Ratio
+- Max Drawdown
+- Win Rate
+- Number of Trades
+
+## Configuration
+
+Edit `src/config.py` or set environment variables:
+
+```python
+# Database (TimescaleDB on port 5433)
+DATABASE_URL=postgresql://trading:trading123@localhost:5433/trading_agent
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# Trading
+STARTING_CAPITAL=100000
+MAX_POSITION_PCT=0.10
+STOP_LOSS_PCT=0.05
+TAKE_PROFIT_PCT=0.10
+
+# Watchlist
+WATCHLIST=["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "NVDA", "META"]
+```
+
+## Database Schema
+
+### Market Data (TimescaleDB Hypertable)
+- `time`, `symbol`, `open`, `high`, `low`, `close`, `volume`
+
+### Trades
+- `id`, `timestamp`, `symbol`, `action`, `quantity`, `price`, `strategy`, `reasoning`
+
+### Holdings
+- `symbol`, `quantity`, `avg_cost`, `current_price`, `market_value`, `unrealized_pnl`
+
+### Agent Decisions
+- `id`, `timestamp`, `symbol`, `agent`, `decision`, `confidence`, `reasoning`
+
+## Project Structure
+
+```
+trading-agent/
+├── docker-compose.yml          # TimescaleDB + Redis
+├── requirements.txt
+├── src/
+│   ├── main.py                 # FastAPI app
+│   ├── config.py               # Settings
+│   ├── core/
+│   │   ├── database.py         # SQLAlchemy + TimescaleDB
+│   │   ├── events.py           # Redis pub/sub
+│   │   └── cache.py            # Redis cache
+│   ├── data/
+│   │   ├── providers.py        # yfinance integration
+│   │   ├── ingestion.py        # Data pipeline
+│   │   └── indicators.py       # Technical indicators
+│   ├── strategies/
+│   │   ├── rsi_reversion.py    # RSI strategy
+│   │   └── ma_crossover.py     # MA strategy
+│   ├── agents/
+│   │   ├── technical.py        # TA agent
+│   │   ├── risk.py             # Risk agent
+│   │   └── orchestrator.py     # Signal combiner
+│   ├── portfolio/
+│   │   └── manager.py          # Portfolio tracking
+│   ├── backtest/
+│   │   └── engine.py           # Backtrader wrapper
+│   └── api/
+│       └── templates/          # HTMX templates
+└── tests/
+```
+
+## Development
+
+### Running Tests
+```bash
+pytest tests/
+```
+
+### Adding New Strategy
+1. Create file in `src/strategies/`
+2. Inherit from `BaseStrategy`
+3. Implement `generate_signal()` method
+4. Register in `TechnicalAgent`
+
+### Adding New Agent
+1. Create file in `src/agents/`
+2. Inherit from `BaseAgent`
+3. Implement `analyze()` method
+4. Register in API routes
+
+## License
+
+MIT

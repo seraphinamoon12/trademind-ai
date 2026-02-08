@@ -1,0 +1,133 @@
+{% raw %}{% extends "base.html" %}{% endraw %}
+
+{% raw %}{% block content %}{% endraw %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Portfolio Summary -->
+    <div class="lg:col-span-2 space-y-6">
+        <div class="grid grid-cols-3 gap-4">
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <p class="text-gray-400 text-sm">Total Value</p>
+                <p class="text-2xl font-bold text-white">${% raw %}{{{% endraw %} "%.2f"|format(portfolio.total_value) {% raw %}}}{% endraw %}</p>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <p class="text-gray-400 text-sm">Cash Balance</p>
+                <p class="text-2xl font-bold text-green-400">${% raw %}{{{% endraw %} "%.2f"|format(portfolio.cash_balance) {% raw %}}}{% endraw %}</p>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <p class="text-gray-400 text-sm">Total Return</p>
+                <p class="text-2xl font-bold {% raw %}{% if portfolio.total_return_pct >= 0 %}text-green-400{% else %}text-red-400{% endif %}{% endraw %}">
+                    {% raw %}{{{% endraw %} "%.2f"|format(portfolio.total_return_pct) {% raw %}}}{% endraw %}%
+                </p>
+            </div>
+        </div>
+        
+        <!-- Performance Chart -->
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <h2 class="text-lg font-semibold mb-4">Portfolio Performance</h2>
+            <div id="performance-chart" style="height: 300px;"></div>
+        </div>
+        
+        <!-- Holdings -->
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold">Holdings</h2>
+                <button hx-post="/api/portfolio/update-prices" 
+                        hx-swap="none"
+                        class="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-sm">
+                    Update Prices
+                </button>
+            </div>
+            {% raw %}{% if holdings %}{% endraw %}
+            <table class="w-full text-sm">
+                <thead class="text-gray-400 border-b border-gray-700">
+                    <tr>
+                        <th class="text-left py-2">Symbol</th>
+                        <th class="text-right py-2">Quantity</th>
+                        <th class="text-right py-2">Avg Cost</th>
+                        <th class="text-right py-2">Current</th>
+                        <th class="text-right py-2">Value</th>
+                        <th class="text-right py-2">P&L</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% raw %}{% for symbol, holding in holdings.items() %}{% endraw %}
+                    <tr class="border-b border-gray-700/50">
+                        <td class="py-2 font-medium">{% raw %}{{{% endraw %} symbol {% raw %}}}{% endraw %}</td>
+                        <td class="text-right">{% raw %}{{{% endraw %} holding.quantity {% raw %}}}{% endraw %}</td>
+                        <td class="text-right">${% raw %}{{{% endraw %} "%.2f"|format(holding.avg_cost) {% raw %}}}{% endraw %}</td>
+                        <td class="text-right">${% raw %}{{{% endraw %} "%.2f"|format(holding.current_price or 0) {% raw %}}}{% endraw %}</td>
+                        <td class="text-right">${% raw %}{{{% endraw %} "%.2f"|format(holding.market_value) {% raw %}}}{% endraw %}</td>
+                        <td class="text-right {% raw %}{% if holding.unrealized_pnl >= 0 %}text-green-400{% else %}text-red-400{% endif %}{% endraw %}">
+                            {% raw %}{{{% endraw %} "%.2f"|format(holding.unrealized_pnl) {% raw %}}}{% endraw %}
+                        </td>
+                    </tr>
+                    {% raw %}{% endfor %}{% endraw %}
+                </tbody>
+            </table>
+            {% raw %}{% else %}{% endraw %}
+            <p class="text-gray-500 text-center py-8">No holdings yet</p>
+            {% raw %}{% endif %}{% endraw %}
+        </div>
+    </div>
+    
+    <!-- Watchlist & Signals -->
+    <div class="space-y-6">
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <h2 class="text-lg font-semibold mb-4">Watchlist</h2>
+            <div class="space-y-2" id="watchlist">
+                {% raw %}{% for symbol in watchlist %}{% endraw %}
+                <div class="flex items-center justify-between p-2 bg-gray-700/50 rounded hover:bg-gray-700 cursor-pointer"
+                     hx-post="/api/agent/analyze/{% raw %}{{{% endraw %} symbol {% raw %}}}{% endraw %}"
+                     hx-target="#signal-result"
+                     hx-swap="innerHTML">
+                    <span class="font-medium">{% raw %}{{{% endraw %} symbol {% raw %}}}{% endraw %}</span>
+                    <span class="text-gray-400 text-sm">Click to analyze</span>
+                </div>
+                {% raw %}{% endfor %}{% endraw %}
+            </div>
+        </div>
+        
+        <!-- Signal Result -->
+        <div id="signal-result" class="bg-gray-800 rounded-lg p-4 border border-gray-700 min-h-[200px]">
+            <p class="text-gray-500 text-center">Click a symbol to analyze</p>
+        </div>
+        
+        <!-- Recent Trades -->
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700"
+             hx-get="/api/trades/?limit=5"
+             hx-trigger="load, every 30s">
+            <h2 class="text-lg font-semibold mb-4">Recent Trades</h2>
+            <div class="text-center text-gray-500">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load performance chart
+fetch('/api/portfolio/performance?days=30')
+    .then(r => r.json())
+    .then(data => {
+        if (data.snapshots && data.snapshots.length > 0) {
+            const times = data.snapshots.map(s => s.timestamp);
+            const values = data.snapshots.map(s => s.total_value);
+            
+            Plotly.newPlot('performance-chart', [{
+                x: times,
+                y: values,
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: '#3b82f6', width: 2 },
+                fill: 'tozeroy',
+                fillcolor: 'rgba(59, 130, 246, 0.1)'
+            }], {
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                font: { color: '#9ca3af' },
+                margin: { t: 10, r: 10, b: 30, l: 50 },
+                xaxis: { gridcolor: '#374151', showgrid: true },
+                yaxis: { gridcolor: '#374151', showgrid: true, tickprefix: '$' }
+            }, { responsive: true, displayModeBar: false });
+        }
+    });
+</script>
+{% raw %}{% endblock %}{% endraw %}
