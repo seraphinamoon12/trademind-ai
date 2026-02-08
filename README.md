@@ -37,11 +37,29 @@ An AI-powered autonomous trading system with rule-based strategies (RSI Mean Rev
 
 ## Quick Start
 
-### 1. Start the Infrastructure
+### Prerequisites
+
+- Python 3.11+
+- Docker & Docker Compose
+- Interactive Brokers account (for live trading)
+- ZAI API key (for sentiment analysis)
+
+### 1. Clone & Setup
 
 ```bash
 cd ~/projects/trading-agent
 
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 2. Start Infrastructure
+
+```bash
 # Start TimescaleDB and Redis
 docker compose up -d
 
@@ -49,20 +67,89 @@ docker compose up -d
 docker compose ps
 ```
 
-### 2. Initialize Database
+### 3. Initialize Database
 
 ```bash
-source venv/bin/activate
 python init_db.py
 ```
 
-### 3. Run Tests
+### 4. Setup IB Gateway (For Live/Paper Trading)
+
+IB Gateway connects to Interactive Brokers for algorithmic trading.
 
 ```bash
-python test_components.py
+# Start IB Gateway (installed at ~/ibgateway/)
+~/ibgateway/start_ibgateway.sh
 ```
 
-### 4. Start the Server
+**First-time setup:**
+1. **Login** with your IBKR credentials
+2. **Select** Paper Trading account (recommended for testing)
+3. **Enable API** (Edit → Global Configuration → API → Settings):
+   - ✅ Enable ActiveX and Socket Clients
+   - Port: `7497` (paper trading)
+   - Uncheck "Read-Only API" to allow trading
+4. **Click OK**
+
+**Verify connection:**
+```bash
+python3 -c "
+from ib_insync import IB
+ib = IB()
+ib.connect('127.0.0.1', 7497, clientId=1)
+print('✓ Connected to IB Gateway!')
+print('Account:', ib.managedAccounts())
+ib.disconnect()
+"
+```
+
+### 5. Run Tests
+
+```bash
+# Run all tests
+python run_tests.py --type all
+
+# Or run specific test suites
+python run_tests.py --type unit          # Unit tests (no IBKR needed)
+python run_tests.py --type integration   # Requires IB Gateway running
+python run_tests.py --type error         # Error handling tests
+
+# Or use pytest directly
+pytest tests/brokers/ -v
+```
+
+### 6. Configure Environment
+
+```bash
+# Copy example config
+cp .env.example .env
+
+# Edit with your settings
+nano .env
+```
+
+**Required settings:**
+```bash
+# Database
+DATABASE_URL=postgresql://trading:trading123@localhost:5433/trading_agent
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# IBKR (for live trading)
+IBKR_HOST=127.0.0.1
+IBKR_PORT=7497        # 7497=paper, 7496=live
+IBKR_CLIENT_ID=1
+
+# ZAI API (for sentiment analysis)
+ZAI_API_KEY=your_key_here
+
+# Trading settings
+STARTING_CAPITAL=100000
+MAX_POSITION_PCT=0.10
+```
+
+### 7. Start the Server
 
 ```bash
 # Option 1: Use the startup script
@@ -72,12 +159,36 @@ python test_components.py
 uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 5. Access the Application
+### 8. Access the Application
 
 - **Dashboard**: http://localhost:8000/
 - **Backtest Page**: http://localhost:8000/backtest
 - **API Health**: http://localhost:8000/health
 - **API Docs**: http://localhost:8000/docs
+
+### Quick Commands Cheat Sheet
+
+```bash
+# Start everything
+docker compose up -d
+~/ibgateway/start_ibgateway.sh &
+./start.sh
+
+# Check status
+docker compose ps
+trademind server status
+
+# Run tests
+python run_tests.py --type all
+
+# View logs
+trademind server logs --follow
+docker compose logs -f
+
+# Stop everything
+Ctrl+C (to stop server)
+docker compose down
+```
 
 ## API Endpoints
 
