@@ -351,3 +351,142 @@
 - [ ] Safety rule validation tests
 - [ ] Load testing for API endpoints
 - [ ] End-to-end trading simulation tests
+
+---
+
+## CLI Implementation Tasks
+
+### File Structure Setup
+- [ ] Create cli/ directory structure with __init__.py
+- [ ] Create cli/main.py - Entry point with main CLI group
+- [ ] Create cli/server.py - Server management commands (start, stop, status, logs, restart)
+- [ ] Create cli/portfolio.py - Portfolio commands (portfolio, holdings, performance, sectors, export)
+- [ ] Create cli/trades.py - Trade commands (list, show, export, today, pnl)
+- [ ] Create cli/strategies.py - Strategy commands (list, enable, disable, config, set, performance, backtest)
+- [ ] Create cli/safety.py - Safety commands (status, circuit-breaker, heat, emergency-stop, reset-circuit-breaker, limits, set)
+- [ ] Create cli/backtest.py - Backtest commands (run, compare, results, list, export)
+- [ ] Create cli/data.py - Data commands (ingest, status, show, update-indicators, clear-cache, verify)
+- [ ] Create cli/config.py - Config commands (show, get, set, reset, validate, export, import)
+- [ ] Create setup.py with CLI entry point configuration
+- [ ] Create trademind executable script
+
+### Dependencies Setup
+- [ ] Add click>=8.0.0 to dependencies
+- [ ] Add requests>=2.28.0 to dependencies
+- [ ] Add tabulate>=0.9.0 to dependencies (table formatting)
+- [ ] Add rich>=13.0.0 to dependencies (colored output)
+- [ ] Add pyyaml>=6.0 to dependencies (config files)
+
+### Server Management Implementation
+- [ ] Implement server start command with --port and --reload options
+- [ ] Implement server stop command (read PID from file, kill process)
+- [ ] Implement server status command (check /health endpoint)
+- [ ] Implement server logs command with --follow and --lines options
+- [ ] Implement server restart command
+
+### Portfolio Commands Implementation
+- [ ] Implement portfolio summary command
+- [ ] Implement portfolio holdings detailed view
+- [ ] Implement portfolio performance command with --days option
+- [ ] Implement portfolio sectors view
+- [ ] Implement portfolio export with --format (csv|json) and --output options
+
+### Trade Commands Implementation
+- [ ] Implement trades list with --limit and --symbol options
+- [ ] Implement trades show [trade_id] command
+- [ ] Implement trades export with --start and --end date options
+- [ ] Implement trades today command
+- [ ] Implement trades pnl with --symbol option
+
+### Strategy Commands Implementation
+- [ ] Implement strategies list command
+- [ ] Implement strategies enable [strategy] command
+- [ ] Implement strategies disable [strategy] command
+- [ ] Implement strategies config [strategy] command
+- [ ] Implement strategies set [strategy] with parameter options (--oversold, --overbought)
+- [ ] Implement strategies performance with --strategy option
+- [ ] Implement strategies backtest [strategy] with --symbol and --days options
+
+### Safety Commands Implementation
+- [ ] Implement safety status command
+- [ ] Implement safety circuit-breaker command
+- [ ] Implement safety heat command
+- [ ] Implement safety emergency-stop with --reason option
+- [ ] Implement safety reset-circuit-breaker command
+- [ ] Implement safety limits command
+- [ ] Implement safety set command with --max-positions and other risk parameters
+
+### Backtest Commands Implementation
+- [ ] Implement backtest run with --strategy, --symbol, --symbols, and --days options
+- [ ] Implement backtest compare with --strategies and --symbol options
+- [ ] Implement backtest results [backtest_id] command
+- [ ] Implement backtest list with --limit option
+- [ ] Implement backtest export [backtest_id] with --format option
+
+### Data Commands Implementation
+- [ ] Implement data ingest with --symbols option
+- [ ] Implement data status command
+- [ ] Implement data show [symbol] with --days option
+- [ ] Implement data update-indicators command
+- [ ] Implement data clear-cache command
+- [ ] Implement data verify command
+
+### Config Commands Implementation
+- [ ] Implement config show command
+- [ ] Implement config get [key] command
+- [ ] Implement config set [key] [value] command
+- [ ] Implement config reset command
+- [ ] Implement config validate command
+- [ ] Implement config export command (output to stdout)
+- [ ] Implement config import [file] command
+
+### Interactive Mode
+- [ ] Implement interactive shell (trademind shell)
+- [ ] Add support for running commands within shell
+- [ ] Implement exit command for shell
+
+### Automation Features
+- [ ] Add --format json option to relevant commands for scripting
+- [ ] Document cron job examples for daily reports
+- [ ] Document strategy rotation script examples
+- [ ] Document health check script examples
+
+### Testing
+- [ ] Create tests/cli/test_server.py
+- [ ] Create tests/cli/test_portfolio.py
+- [ ] Create tests/cli/test_trades.py
+- [ ] Create tests/cli/test_strategies.py
+- [ ] Create tests/cli/test_safety.py
+- [ ] Create tests/cli/test_backtest.py
+- [ ] Create tests/cli/test_data.py
+- [ ] Create tests/cli/test_config.py
+- [ ] Add unit tests for all CLI commands
+- [ ] Add integration tests for CLI-API interaction
+
+### Documentation
+- [ ] Implement --help for main CLI group
+- [ ] Implement --help for all command groups
+- [ ] Implement --help for all individual commands
+- [ ] Create examples command with usage examples
+- [ ] Document all CLI commands with examples
+
+### Output Formatting
+- [ ] Implement table formatting with tabulate for all list commands
+- [ ] Add emoji indicators for status (✅, 🔴, 🟢)
+- [ ] Use rich for colored output
+- [ ] Add progress bars for long-running operations
+- [ ] Format currency values consistently
+
+### Error Handling
+- [ ] Add graceful error handling for API failures
+- [ ] Add validation for command options
+- [ ] Provide helpful error messages
+- [ ] Add retry logic for network calls
+- [ ] Handle missing server connection gracefully
+
+### Future Enhancements (Optional)
+- [ ] WebSocket Mode - Real-time updates in terminal
+- [ ] Dashboard Mode - `trademind dashboard` launches TUI
+- [ ] Plugin System - Custom commands via plugins
+- [ ] Remote Control - CLI for remote servers via SSH
+- [ ] Notification Integration - Slack/Discord alerts via CLI
