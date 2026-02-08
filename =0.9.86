@@ -1,0 +1,13 @@
+Collecting ib_insync
+  Downloading ib_insync-0.9.86-py3-none-any.whl.metadata (5.4 kB)
+Collecting eventkit (from ib_insync)
+  Downloading eventkit-1.0.3-py3-none-any.whl.metadata (5.4 kB)
+Collecting nest-asyncio (from ib_insync)
+  Downloading nest_asyncio-1.6.0-py3-none-any.whl.metadata (2.8 kB)
+Requirement already satisfied: numpy in ./venv/lib/python3.12/site-packages (from eventkit->ib_insync) (2.2.6)
+Downloading ib_insync-0.9.86-py3-none-any.whl (72 kB)
+Downloading eventkit-1.0.3-py3-none-any.whl (31 kB)
+Downloading nest_asyncio-1.6.0-py3-none-any.whl (5.2 kB)
+Installing collected packages: nest-asyncio, eventkit, ib_insync
+
+Successfully installed eventkit-1.0.3 ib_insync-0.9.86 nest-asyncio-1.6.0

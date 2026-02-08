@@ -1175,3 +1175,1330 @@
 
 *Last Updated: 2026-02-07*  
 *Based on: IBKR_INTEGRATION_PLAN.md*
+
+---
+
+## Shining Sun AI Trading Insights - Implementation Plan
+
+*Created: 2026-02-08*  
+*Based on: Shining Sun AI Trading Insights Review*
+
+### Overview
+
+This plan implements the advanced AI trading features from Shining Sun's insights, prioritizing features that provide the most value for TradeMind AI while building on the existing IBKR integration and multi-agent architecture.
+
+### Priority Framework
+
+- **High Priority**: Critical safety features, immediate trading edge, high ROI
+- **Medium Priority**: Advanced features that significantly improve performance
+- **Low Priority**: Nice-to-have enhancements, future capabilities
+
+### Complexity Definitions
+
+- **Simple**: 1-3 days, single file, minimal dependencies
+- **Medium**: 1-2 weeks, multiple files, some new dependencies
+- **Complex**: 3-4 weeks, architecture changes, significant testing
+
+---
+
+## Phase 1: Hallucination Hedge (High Priority, Medium Complexity)
+*Timeline: Weeks 1-2*
+
+### Critical Safety Layer - Validating All LLM Outputs
+
+#### 1.1 Hard Data Validation Tool ✅
+**Priority**: High  
+**Complexity**: Simple  
+**Dependencies**: None  
+**Files**: `src/validation/hard_data_validator.py`, `src/validation/__init__.py`  
+**Timeline**: 1-2 days
+
+**Description**: Create a validation tool that cross-references all LLM-extracted numbers with actual market data from APIs.
+
+**Implementation**:
+- [ ] Create `HardDataValidator` class
+- [ ] Implement `validate_price()` - Fetch real-time price from broker/yfinance
+- [ ] Implement `validate_volume()` - Fetch real-time volume
+- [ ] Implement `validate_indicator()` - Recalculate indicators from raw data
+- [ ] Implement `validate_confidence()` - Ensure 0-1 range
+- [ ] Add tolerance thresholds for validation (price +/- 1%, volume +/- 5%)
+- [ ] Return validation result with warnings/errors
+- [ ] Add logging for all validation attempts
+
+**Acceptance Criteria**:
+- Can validate prices against real-time data
+- Flags discrepancies > threshold
+- Returns detailed validation report
+
+---
+
+#### 1.2 Validation Middleware for Agents
+**Priority**: High  
+**Complexity**: Simple  
+**Dependencies**: 1.1  
+**Files**: `src/validation/middleware.py`, `src/agents/sentiment.py`, `src/agents/technical.py`  
+**Timeline**: 1-2 days
+
+**Description**: Wrap agent outputs with automatic validation before use.
+
+**Implementation**:
+- [ ] Create `@validate_output` decorator
+- [ ] Apply to all agent `analyze()` methods
+- [ ] On validation failure: log error, return HOLD signal, mark as invalid
+- [ ] Add validation stats tracking (success rate, failure reasons)
+- [ ] Implement fallback strategies when validation fails
+- [ ] Add circuit breaker if validation fails > X% of time
+
+**Acceptance Criteria**:
+- All agent outputs validated before use
+- Invalid outputs are rejected
+- Fallback mechanisms work correctly
+
+---
+
+#### 1.3 Sentiment Agent Data Validation
+**Priority**: High  
+**Complexity**: Simple  
+**Dependencies**: 1.1, 1.2  
+**Files**: `src/agents/sentiment.py`  
+**Timeline**: 1 day
+
+**Description**: Validate sentiment agent's price/volume inputs and outputs.
+
+**Implementation**:
+- [ ] Validate price data before sending to LLM
+- [ ] Validate volume data before sending to LLM
+- [ ] Cross-check sentiment-derived prices with actual prices
+- [ ] Flag suspicious sentiment patterns (e.g., bullish sentiment + falling price)
+- [ ] Add price trend confirmation (sentiment must align with 1d trend)
+- [ ] Add confidence penalties for mismatches
+
+**Acceptance Criteria**:
+- Input data validated before LLM call
+- Output cross-referenced with actual market data
+- Suspicious patterns flagged
+
+---
+
+#### 1.4 Orchestrator Validation Integration
+**Priority**: High  
+**Complexity**: Simple  
+**Dependencies**: 1.2  
+**Files**: `src/agents/orchestrator.py`  
+**Timeline**: 1 day
+
+**Description**: Integrate validation into the orchestrator's decision flow.
+
+**Implementation**:
+- [ ] Check validation status of each agent signal
+- [ ] Down-weight signals from agents with validation failures
+- [ ] Log validation warnings in decision reasoning
+- [ ] Reject decisions if >50% of signals have validation issues
+- [ ] Add validation status to API responses
+
+**Acceptance Criteria**:
+- Orchestrator considers validation status
+- Invalid signals have reduced impact
+- Validation status visible in UI
+
+---
+
+#### 1.5 Testing & Monitoring
+**Priority**: High  
+**Complexity**: Simple  
+**Dependencies**: 1.1-1.4  
+**Files**: `tests/validation/test_hard_data_validator.py`, `tests/validation/test_middleware.py`  
+**Timeline**: 2-3 days
+
+**Description**: Comprehensive tests and monitoring for validation layer.
+
+**Implementation**:
+- [ ] Unit tests for all validation functions
+- [ ] Integration tests for validation middleware
+- [ ] Mock API responses for test reliability
+- [ ] Add validation metrics to monitoring dashboard
+- [ ] Create alerts for high validation failure rates
+- [ ] Log all validation failures with context
+- [ ] Weekly validation report generation
+
+**Acceptance Criteria**:
+- 100% test coverage for validation logic
+- Validation metrics tracked in dashboard
+- Alerts configured for failures
+
+---
+
+## Phase 2: Multi-Agent Debate System (High Priority, Medium Complexity)
+*Timeline: Weeks 3-5*
+
+### Enhance Existing Agents with Debate Protocols
+
+#### 2.1 Bull/Bear Agent Architecture
+**Priority**: High  
+**Complexity**: Medium  
+**Dependencies**: None  
+**Files**: `src/agents/bull.py`, `src/agents/bear.py`, `src/agents/debate.py`, `src/agents/judge.py`  
+**Timeline**: 3-4 days
+
+**Description**: Create specialized Bull and Bear agents that argue opposite sides, with a Judge to decide.
+
+**Implementation**:
+- [ ] Create `BullAgent` - Always looks for bullish signals
+- [ ] Create `BearAgent` - Always looks for bearish signals
+- [ ] Implement debate protocol:
+  - [ ] Bull presents bullish case
+  - [ ] Bear presents bearish case
+  - [ ] Each agent critiques the other's arguments
+  - [ ] Final round of rebuttals
+- [ ] Create `JudgeAgent` - Evaluates both sides and decides
+- [ ] Use LLM to generate arguments and critiques
+- [ ] Implement structured debate format (arguments, evidence, counter-arguments)
+- [ ] Add confidence scores for each argument
+- [ ] Track debate history for learning
+
+**Acceptance Criteria**:
+- Bull/Bear agents generate coherent arguments
+- Debate follows structured protocol
+- Judge makes reasoned decisions
+
+---
+
+#### 2.2 Debate Integration with Existing Agents
+**Priority**: High  
+**Complexity**: Medium  
+**Dependencies**: 2.1  
+**Files**: `src/agents/orchestrator.py`, `src/agents/debate.py`  
+**Timeline**: 2-3 days
+
+**Description**: Integrate debate system into existing orchestrator.
+
+**Implementation**:
+- [ ] Add debate mode to orchestrator (optional, can toggle)
+- [ ] For high-confidence signals: Run debate between Bull/Bear
+- [ ] Feed existing Technical/Sentiment signals as evidence
+- [ ] Judge's decision becomes final signal
+- [ ] Add debate metadata to decision logging
+- [ ] Include debate arguments in reasoning
+- [ ] Configurable debate depth (number of rounds)
+- [ ] Performance tracking: debate vs no-debate decisions
+
+**Acceptance Criteria**:
+- Debate mode works with existing agents
+- Decisions include debate reasoning
+- Performance metrics tracked
+
+---
+
+#### 2.3 Anti-Thesis Generator
+**Priority**: Medium  
+**Complexity**: Medium  
+**Dependencies**: 2.1  
+**Files**: `src/agents/antithesis.py`  
+**Timeline**: 2-3 days
+
+**Description**: LLM agent that builds strongest bear case for bullish positions (and vice versa).
+
+**Implementation**:
+- [ ] Create `AntiThesisAgent` class
+- [ ] Input: Trading signal with reasoning
+- [ ] Output: Strongest counter-arguments, risk factors, bear case
+- [ ] Use prompt engineering to force alternative perspective
+- [ ] Identify blind spots in analysis
+- [ ] Suggest additional factors to consider
+- [ ] Update confidence based on anti-thesis strength
+- [ ] Flag high-risk decisions when anti-thesis is strong
+
+**Acceptance Criteria**:
+- Generates strong counter-arguments
+- Identifies blind spots
+- Reduces overconfidence bias
+
+---
+
+#### 2.4 Multi-Agent Crew with CrewAI
+**Priority**: Medium  
+**Complexity**: Complex  
+**Dependencies**: None  
+**Files**: `src/agents/crew.py`, `requirements.txt` (add crewai)  
+**Timeline**: 4-5 days
+
+**Description**: Implement full multi-agent crew system using CrewAI for complex workflows.
+
+**Implementation**:
+- [ ] Add `crewai>=0.28.0` to requirements.txt
+- [ ] Create `ResearcherAgent` - Scans 10-Ks, 10-Qs, news
+- [ ] Create `QuantAgent` - Pulls OHLC, calculates indicators
+- [ ] Enhance `RiskAgent` - VaR, position limits
+- [ ] Enhance `ExecutionerAgent` - Broker API interaction
+- [ ] Define crew workflows:
+  - [ ] Research workflow: Researcher → Quant → Risk
+  - [ ] Trading workflow: Quant → Risk → Executioner
+  - [ ] Analysis workflow: Researcher → Anti-Thesis → Judge
+- [ ] Implement crew task orchestration
+- [ ] Add crew performance monitoring
+- [ ] Create crew dashboards
+
+**Acceptance Criteria**:
+- CrewAI integration works
+- Multiple agents collaborate
+- Workflows complete successfully
+
+---
+
+#### 2.5 Testing & Optimization
+**Priority**: High  
+**Complexity**: Medium  
+**Dependencies**: 2.1-2.4  
+**Files**: `tests/agents/test_debate.py`, `tests/agents/test_crew.py`  
+**Timeline**: 3-4 days
+
+**Description**: Test debate/crew systems and optimize performance.
+
+**Implementation**:
+- [ ] Unit tests for Bull/Bear agents
+- [ ] Unit tests for Judge agent
+- [ ] Integration tests for debate system
+- [ ] Integration tests for crew workflows
+- [ ] Backtesting: Debate vs No-Debate performance
+- [ ] Optimize LLM prompts for better arguments
+- [ ] Tune debate parameters (rounds, timeout)
+- [ ] Performance benchmarking
+- [ ] Cost analysis (API calls per decision)
+
+**Acceptance Criteria**:
+- All tests passing
+- Debate improves decision quality
+- Cost within acceptable limits
+
+---
+
+## Phase 3: Macro-Sentiment Analysis (Medium Priority, Medium Complexity)
+*Timeline: Weeks 6-8*
+
+### New Signal Source: Macro Economic Sentiment
+
+#### 3.1 Macro Data Ingestion
+**Priority**: Medium  
+**Complexity**: Medium  
+**Dependencies**: None  
+**Files**: `src/data/macro_providers.py`, `src/agents/macro_sentiment.py`  
+**Timeline**: 2-3 days
+
+**Description**: Ingest macroeconomic data from multiple sources.
+
+**Implementation**:
+- [ ] Add `fredapi>=0.5.0` to requirements.txt (FRED data)
+- [ ] Add `pandas-datareader>=0.10.0` to requirements.txt
+- [ ] Create `MacroDataProvider` class
+- [ ] Fetch FRED data (interest rates, GDP, unemployment)
+- [ ] Fetch FOMC minutes (parse for sentiment)
+- [ ] Fetch central bank speeches (parse for tone)
+- [ ] Fetch global news headlines (Exa.ai or NewsAPI)
+- [ ] Store macro data in database
+- [ ] Implement update scheduling (daily for some, real-time for news)
+
+**Acceptance Criteria**:
+- Macro data successfully fetched
+- Data stored in database
+- Update scheduling works
+
+---
+
+#### 3.2 Macro Sentiment Analyzer
+**Priority**: Medium  
+**Complexity**: Medium  
+**Dependencies**: 3.1  
+**Files**: `src/agents/macro_sentiment.py`  
+**Timeline**: 2-3 days
+
+**Description**: Analyze macroeconomic sentiment using LLM.
+
+**Implementation**:
+- [ ] Create `MacroSentimentAgent` class
+- [ ] Use LLM to analyze FOMC minutes tone (hawkish/dovish)
+- [ ] Use LLM to analyze central bank speeches
+- [ ] Use LLM to analyze global news sentiment
+- [ ] Detect narrative shifts in economic outlook
+- [ ] Generate macro sentiment score (-1 to +1)
+- [ ] Identify key macro factors affecting markets
+- [ ] Generate macro trading signals (risk-on, risk-off)
+- [ ] Cache results (macro changes slowly, update every 12h)
+
+**Acceptance Criteria**:
+- Macro sentiment successfully analyzed
+- Narrative shifts detected
+- Signals generated
+
+---
+
+#### 3.3 Integration with Trading System
+**Priority**: Medium  
+**Complexity**: Simple  
+**Dependencies**: 3.2  
+**Files**: `src/agents/orchestrator.py`, `src/config.py`  
+**Timeline**: 1-2 days
+
+**Description**: Integrate macro sentiment into trading decisions.
+
+**Implementation**:
+- [ ] Add macro sentiment weight to config (default: 0.15)
+- [ ] Integrate macro signal into orchestrator
+- [ ] Macro sentiment modulates position sizing:
+  - [ ] Risk-on (bullish macro): Increase position size 10-20%
+  - [ ] Risk-off (bearish macro): Decrease position size 10-20%
+- [ ] Macro sentiment affects sector allocation
+- [ ] Add macro sentiment to decision reasoning
+- [ ] Create macro sentiment dashboard widget
+- [ ] Add macro sentiment to API responses
+
+**Acceptance Criteria**:
+- Macro sentiment integrated into decisions
+- Position sizing adjusted appropriately
+- Dashboard displays macro sentiment
+
+---
+
+#### 3.4 Narrative Shift Detection
+**Priority**: Low  
+**Complexity**: Medium  
+**Dependencies**: 3.2  
+**Files**: `src/agents/macro_sentiment.py`  
+**Timeline**: 2-3 days
+
+**Description**: Detect when market narrative shifts (before price action).
+
+**Implementation**:
+- [ ] Track macro sentiment history (last 6 months)
+- [ ] Calculate sentiment momentum (rate of change)
+- [ ] Detect sentiment reversals (bull → bear, bear → bull)
+- [ ] Identify shift triggers (policy changes, events)
+- [ ] Alert on narrative shifts
+- [ ] Update strategy parameters based on new narrative
+- [ ] Backtest: Trade on narrative shifts vs price action
+
+**Acceptance Criteria**:
+- Narrative shifts detected
+- Alerts generated
+- Shifts precede price action (backtest验证)
+
+---
+
+#### 3.5 Testing & Validation
+**Priority**: Medium  
+**Complexity**: Simple  
+**Dependencies**: 3.1-3.4  
+**Files**: `tests/agents/test_macro_sentiment.py`  
+**Timeline**: 2 days
+
+**Description**: Test macro sentiment system.
+
+**Implementation**:
+- [ ] Unit tests for macro data ingestion
+- [ ] Unit tests for sentiment analysis
+- [ ] Integration tests for trading system
+- [ ] Backtest macro sentiment signals
+- [ ] Validate narrative shift detection
+- [ ] Performance benchmarking
+
+**Acceptance Criteria**:
+- All tests passing
+- Macro sentiment improves performance
+- Narrative shifts add value
+
+---
+
+## Phase 4: Advanced Options Strategies (Low Priority, High Complexity)
+*Timeline: Weeks 9-13*
+
+### Options Trading Framework
+
+#### 4.1 Options Data Infrastructure
+**Priority**: Low  
+**Complexity**: Medium  
+**Dependencies**: None  
+**Files**: `src/data/options_providers.py`, `src/brokers/base.py` (extend)  
+**Timeline**: 3-4 days
+
+**Description**: Add options data capabilities to the system.
+
+**Implementation**:
+- [ ] Extend broker interface for options (greeks, chains)
+- [ ] Add options data fetching from IBKR/yfinance
+- [ ] Create `OptionsData` dataclass
+- [ ] Implement IV (implied volatility) tracking
+- [ ] Create options chain caching
+- [ ] Store options data in database
+- [ ] Create options data API endpoints
+
+**Acceptance Criteria**:
+- Options data successfully fetched
+- Data stored and accessible via API
+
+---
+
+#### 4.2 Volatility Surface Analysis
+**Priority**: Low  
+**Complexity**: Complex  
+**Dependencies**: 4.1  
+**Files**: `src/strategies/volatility_surface.py`, `src/agents/volatility.py`  
+**Timeline**: 4-5 days
+
+**Description**: Monitor IV across sectors and alert on opportunities.
+
+**Implementation**:
+- [ ] Create `VolatilitySurfaceAnalyzer` class
+- [ ] Calculate IV Rank by sector and expiration
+- [ ] Identify when IV is "too cheap" (IVR < 25) or "too expensive" (IVR > 75)
+- [ ] Monitor term structure (short-term vs long-term IV)
+- [ ] Detect IV skew anomalies
+- [ ] Generate volatility trading signals
+- [ ] Create IV dashboard with sector comparison
+- [ ] Add IV alerts to monitoring system
+
+**Acceptance Criteria**:
+- IV Rank calculated accurately
+- Alerts generated for IV opportunities
+- Dashboard displays volatility surface
+
+---
+
+#### 4.3 Zero-DTE Strategy Framework
+**Priority**: Low  
+**Complexity**: Complex  
+**Dependencies**: 4.1  
+**Files**: `src/strategies/zerodte.py`, `src/agents/zerodte_guardrails.py`  
+**Timeline**: 5-6 days
+
+**Description**: Implement Zero-DTE (Days to Expiration) options with guardrails.
+
+**Implementation**:
+- [ ] Create `ZeroDTEAgent` class
+- [ ] Implement gamma exposure monitoring
+- [ ] Define gamma flip zones (trigger hedge/close)
+- [ ] Auto-trigger guards at gamma flips
+- [ ] Position size limits for Zero-DTE
+- [ ] Time-based liquidation (before close)
+- [ ] Delta hedging logic
+- [ ] Zero-DTE strategy templates (straddles, strangles, iron butterflies)
+- [ ] Real-time P&L tracking for options positions
+
+**Acceptance Criteria**:
+- Gamma exposure tracked
+- Guards trigger at flip zones
+- Zero-DTE positions managed safely
+
+---
+
+#### 4.4 Strategy Optimization with LLM
+**Priority**: Low  
+**Complexity**: Medium  
+**Dependencies**: 4.1  
+**Files**: `src/agents/options_optimizer.py`  
+**Timeline**: 3-4 days
+
+**Description**: Use LLM to optimize options strategy parameters.
+
+**Implementation**:
+- [ ] Create `OptionsOptimizerAgent` class
+- [ ] Input: Market outlook, IV Rank, delta constraints
+- [ ] Use LLM to suggest optimal strategy parameters:
+  - [ ] Iron Condor width and strikes
+  - [ ] Calendar spread ratios
+  - [ ] Diagonal spread selection
+  - [ ] Risk/reward optimization
+- [ ] Validate suggestions with backtesting
+- [ ] Generate strategy recommendations
+- [ ] Include reasoning and risk analysis
+
+**Acceptance Criteria**:
+- LLM generates reasonable strategy suggestions
+- Suggestions validated by backtesting
+- Recommendations improve performance
+
+---
+
+#### 4.5 Options Backtesting Engine
+**Priority**: Low  
+**Complexity**: Complex  
+**Dependencies**: 4.1  
+**Files**: `src/backtest/options_engine.py`  
+**Timeline**: 5-6 days
+
+**Description**: Enhance backtesting for options strategies.
+
+**Implementation**:
+- [ ] Extend backtesting engine for options
+- [ ] Simulate options pricing (Black-Scholes, binomial)
+- [ ] Model options assignment and exercise
+- [ ] Simulate options decay (theta)
+- [ ] Model Greeks (delta, gamma, theta, vega)
+- [ ] Support multi-leg options strategies
+- [ ] Options-specific metrics (win rate, avg return per day, max drawdown)
+- [ ] Compare options vs stock performance
+
+**Acceptance Criteria**:
+- Options backtesting accurate
+- Greeks modeled correctly
+- Performance metrics valid
+
+---
+
+#### 4.6 Testing & Validation
+**Priority**: Low  
+**Complexity**: Medium  
+**Dependencies**: 4.1-4.5  
+**Files**: `tests/strategies/test_options.py`  
+**Timeline**: 3-4 days
+
+**Description**: Test options framework.
+
+**Implementation**:
+- [ ] Unit tests for options data
+- [ ] Unit tests for volatility analysis
+- [ ] Unit tests for Zero-DTE guardrails
+- [ ] Integration tests for options trading
+- [ ] Backtest validation: Compare simulated vs real options P&L
+- [ ] Stress testing: Extreme volatility events
+- [ ] Performance benchmarking
+
+**Acceptance Criteria**:
+- All tests passing
+- Options framework reliable
+- Backtesting accurate
+
+---
+
+## Phase 5: LangGraph Integration (Medium Priority, High Complexity)
+*Timeline: Weeks 14-18*
+
+### Advanced Workflow Orchestration
+
+#### 5.1 LangGraph Setup
+**Priority**: Medium  
+**Complexity**: Medium  
+**Dependencies**: None  
+**Files**: `src/workflows/__init__.py`, `requirements.txt` (add langgraph)  
+**Timeline**: 2-3 days
+
+**Description**: Set up LangGraph for complex agent workflows.
+
+**Implementation**:
+- [ ] Add `langgraph>=0.0.20` to requirements.txt
+- [ ] Create workflow directory structure
+- [ ] Define LangGraph node types (agents, tools, conditions)
+- [ ] Create base workflow templates
+- [ ] Implement workflow state management
+- [ ] Add workflow persistence (to database)
+- [ ] Create workflow monitoring dashboard
+
+**Acceptance Criteria**:
+- LangGraph installed and configured
+- Base workflow templates working
+- State management operational
+
+---
+
+#### 5.2 Multi-Step Analysis Workflows
+**Priority**: Medium  
+**Complexity**: Complex  
+**Dependencies**: 5.1  
+**Files**: `src/workflows/analysis.py`  
+**Timeline**: 4-5 days
+
+**Description**: Create complex multi-step analysis workflows.
+
+**Implementation**:
+- [ ] Design comprehensive analysis workflow:
+  - [ ] Step 1: Fetch data (Researcher)
+  - [ ] Step 2: Technical analysis (Technical Agent)
+  - [ ] Step 3: Sentiment analysis (Sentiment Agent)
+  - [ ] Step 4: Macro analysis (Macro Agent)
+  - [ ] Step 5: Risk assessment (Risk Agent)
+  - [ ] Step 6: Debate (Bull vs Bear)
+  - [ ] Step 7: Anti-thesis check
+  - [ ] Step 8: Judge decision
+  - [ ] Step 9: Validation (Hard Data)
+  - [ ] Step 10: Final recommendation
+- [ ] Implement workflow in LangGraph
+- [ ] Add conditional branching based on intermediate results
+- [ ] Implement workflow retry logic on failures
+- [ ] Add workflow logging and debugging
+- [ ] Create workflow visualization
+
+**Acceptance Criteria**:
+- Full analysis workflow works
+- Conditional branching functional
+- Workflow visualized
+
+---
+
+#### 5.3 Trading Decision Workflows
+**Priority**: Medium  
+**Complexity**: Complex  
+**Dependencies**: 5.2  
+**Files**: `src/workflows/trading.py`  
+**Timeline**: 3-4 days
+
+**Description**: Create workflows for trading decisions.
+
+**Implementation**:
+- [ ] Design trading decision workflow:
+  - [ ] Check market conditions (pre-market)
+  - [ ] Run analysis workflow (from 5.2)
+  - [ ] Generate trading signals
+  - [ ] Risk validation
+  - [ ] Position sizing calculation
+  - [ ] Order routing to broker
+  - [ ] Execution confirmation
+  - [ ] Post-trade analysis
+- [ ] Implement in LangGraph
+- [ ] Add safety checks at each step
+- [ ] Implement circuit breaker integration
+- [ ] Add workflow performance tracking
+- [ ] Create workflow execution dashboard
+
+**Acceptance Criteria**:
+- Trading workflow complete
+- Safety checks functional
+- Dashboard operational
+
+---
+
+#### 5.4 Research & Learning Workflows
+**Priority**: Low  
+**Complexity**: Complex  
+**Dependencies**: 5.1  
+**Files**: `src/workflows/research.py`  
+**Timeline**: 4-5 days
+
+**Description**: Create workflows for research and continuous learning.
+
+**Implementation**:
+- [ ] Design research workflow:
+  - [ ] Scan 10-K/10-Q filings (Researcher Agent)
+  - [ ] Extract key metrics and guidance
+  - [ ] Compare to historical guidance
+  - [ ] Detect linguistic hedging (CEO tone)
+  - [ ] Generate research reports
+  - [ ] Update knowledge base
+- [ ] Design learning workflow:
+  - [ ] Analyze past trades
+  - [ ] Identify success/failure patterns
+  - [ ] Update agent weights
+  - [ ] Tune strategy parameters
+  - [ ] Generate performance reports
+- [ ] Implement in LangGraph
+- [ ] Schedule automated research (quarterly)
+- [ ] Schedule learning reviews (weekly)
+- [ ] Create research dashboard
+
+**Acceptance Criteria**:
+- Research workflows complete
+- Learning workflows functional
+- Automated scheduling works
+
+---
+
+#### 5.5 Workflow Orchestration & Management
+**Priority**: Medium  
+**Complexity**: Medium  
+**Dependencies**: 5.1-5.4  
+**Files**: `src/workflows/manager.py`, `src/api/routes/workflows.py`  
+**Timeline**: 3-4 days
+
+**Description**: Create workflow management system.
+
+**Implementation**:
+- [ ] Create `WorkflowManager` class
+- [ ] Workflow scheduling and execution
+- [ ] Workflow queue management
+- [ ] Workflow status tracking
+- [ ] Workflow history and logs
+- [ ] Workflow performance metrics
+- [ ] API endpoints for workflow management
+- [ ] Manual workflow triggers
+- [ ] Workflow configuration UI
+
+**Acceptance Criteria**:
+- Workflows managed centrally
+- Status tracked accurately
+- API endpoints functional
+
+---
+
+#### 5.6 Testing & Optimization
+**Priority**: High  
+**Complexity**: Medium  
+**Dependencies**: 5.1-5.5  
+**Files**: `tests/workflows/test_langgraph.py`  
+**Timeline**: 3-4 days
+
+**Description**: Test LangGraph workflows.
+
+**Implementation**:
+- [ ] Unit tests for workflow nodes
+- [ ] Integration tests for workflows
+- [ ] End-to-end workflow tests
+- [ ] Workflow performance benchmarking
+- [ ] Stress testing (concurrent workflows)
+- [ ] Workflow failure recovery tests
+- [ ] Cost optimization (minimize API calls)
+
+**Acceptance Criteria**:
+- All tests passing
+- Workflows perform well
+- Failure recovery works
+
+---
+
+## Phase 6: Advanced Backtesting (Medium Priority, Medium Complexity)
+*Timeline: Weeks 19-21*
+
+### VectorBT & QuantConnect Integration
+
+#### 6.1 VectorBT Integration
+**Priority**: Medium  
+**Complexity**: Medium  
+**Dependencies**: None  
+**Files**: `src/backtest/vectorbt_engine.py`, `requirements.txt`  
+**Timeline**: 2-3 days
+
+**Description**: Integrate VectorBT for faster backtesting.
+
+**Implementation**:
+- [ ] Add `vectorbt>=0.25.0` to requirements.txt
+- [ ] Create `VectorBTEngine` class
+- [ ] Port existing strategies to VectorBT
+- [ ] Implement vectorized backtesting
+- [ ] Add VectorBT-specific metrics
+- [ ] Compare VectorBT vs Backtrader results
+- [ ] Document differences and use cases
+
+**Acceptance Criteria**:
+- VectorBT working
+- Strategies ported
+- Results validated
+
+---
+
+#### 6.2 QuantConnect Integration (Optional)
+**Priority**: Low  
+**Complexity**: Complex  
+**Dependencies**: None  
+**Files**: `src/backtest/quantconnect_engine.py`  
+**Timeline**: 5-6 days
+
+**Description**: Optional integration with QuantConnect for cloud backtesting.
+
+**Implementation**:
+- [ ] Research QuantConnect API
+- [ ] Create QuantConnect adapter
+- [ ] Port strategies to QuantConnect format
+- [ ] Implement cloud backtesting
+- [ ] Compare local vs cloud results
+- [ ] Document advantages/disadvantages
+
+**Acceptance Criteria**:
+- QuantConnect integration working
+- Strategies ported
+- Results comparable
+
+---
+
+#### 6.3 Advanced Backtesting Features
+**Priority**: Medium  
+**Complexity**: Medium  
+**Dependencies**: 6.1  
+**Files**: `src/backtest/advanced_features.py`  
+**Timeline**: 3-4 days
+
+**Description**: Add advanced backtesting capabilities.
+
+**Implementation**:
+- [ ] Walk-forward analysis (rolling backtests)
+- [ ] Parameter optimization (grid search, genetic algorithms)
+- [ ] Monte Carlo simulations for risk assessment
+- [ ] Multi-asset backtesting
+- [ ] Portfolio backtesting (multiple strategies)
+- [ ] Transaction cost modeling improvements
+- [ ] Market impact modeling
+- [ ] Regime detection backtesting
+
+**Acceptance Criteria**:
+- Advanced features working
+- Optimization results meaningful
+- Risk assessment accurate
+
+---
+
+#### 6.4 Backtesting Validation
+**Priority**: High  
+**Complexity**: Simple  
+**Dependencies**: 6.1-6.3  
+**Files**: `tests/backtest/test_vectorbt.py`  
+**Timeline**: 2-3 days
+
+**Description**: Validate backtesting engines.
+
+**Implementation**:
+- [ ] Cross-validate VectorBT vs Backtrader
+- [ ] Validate parameter optimization results
+- [ ] Monte Carlo validation against historical worst cases
+- [ ] Walk-forward analysis validation
+- [ ] Create backtesting accuracy metrics
+
+**Acceptance Criteria**:
+- Engines produce similar results
+- Optimization validated
+- Risk metrics accurate
+
+---
+
+## Phase 7: Production Readiness & Monitoring (High Priority, Simple-Medium)
+*Timeline: Weeks 22-24*
+
+### Final Production Preparation
+
+#### 7.1 Comprehensive Monitoring Dashboard
+**Priority**: High  
+**Complexity**: Medium  
+**Dependencies**: All previous phases  
+**Files**: `src/api/monitoring.py`, `src/api/templates/monitoring.html`  
+**Timeline**: 3-4 days
+
+**Description**: Create comprehensive monitoring dashboard.
+
+**Implementation**:
+- [ ] Real-time portfolio monitoring
+- [ ] Agent activity tracking (all agents)
+- [ ] Workflow status monitoring
+- [ ] Validation failure alerts
+- [ ] Macro sentiment display
+- [ ] Volatility surface visualization
+- [ ] Options positions monitoring
+- [ ] Performance metrics dashboard
+- [ ] System health checks
+- [ ] Alert configuration UI
+
+**Acceptance Criteria**:
+- All metrics visible
+- Real-time updates working
+- Alerts functional
+
+---
+
+#### 7.2 Alert System Enhancement
+**Priority**: High  
+**Complexity**: Simple  
+**Dependencies**: All previous phases  
+**Files**: `src/core/alert_manager.py`  
+**Timeline**: 2-3 days
+
+**Description**: Enhance alert system for new features.
+
+**Implementation**:
+- [ ] Validation failure alerts
+- [ ] Debate conflict alerts (Bull/Bear strongly disagree)
+- [ ] Narrative shift alerts
+- [ ] IV anomaly alerts
+- [ ] Zero-DTE guardrail triggers
+- [ ] Workflow failure alerts
+- [ ] Multi-channel notifications (email, Slack, Discord)
+- [ ] Alert history and analytics
+- [ ] Alert escalation rules
+
+**Acceptance Criteria**:
+- All new features have alerts
+- Multi-channel notifications work
+- Alert history tracked
+
+---
+
+#### 7.3 Performance Optimization
+**Priority**: High  
+**Complexity**: Medium  
+**Dependencies**: All previous phases  
+**Files**: Various  
+**Timeline**: 3-4 days
+
+**Description**: Optimize system performance.
+
+**Implementation**:
+- [ ] LLM call optimization (batching, caching)
+- [ ] Workflow execution optimization
+- [ ] Database query optimization
+- [ ] API response time optimization
+- [ ] Memory usage optimization
+- [ ] Concurrency improvements
+- [ ] Load testing and benchmarking
+- [ ] Performance profiling
+- [ ] Documentation of performance characteristics
+
+**Acceptance Criteria**:
+- System responsive under load
+- API response times < 1s
+- Memory usage stable
+
+---
+
+#### 7.4 Documentation & Training
+**Priority**: High  
+**Complexity**: Simple  
+**Dependencies**: All previous phases  
+**Files**: `docs/`, `README.md` updates  
+**Timeline**: 2-3 days
+
+**Description**: Document new features and create training materials.
+
+**Implementation**:
+- [ ] Update README with new features
+- [ ] Create API documentation for new endpoints
+- [ ] Create user guide for new features
+- [ ] Create admin guide for monitoring
+- [ ] Document configuration options
+- [ ] Create troubleshooting guide
+- [ ] Create video tutorials (optional)
+- [ ] Create onboarding checklist
+
+**Acceptance Criteria**:
+- All features documented
+- User guide complete
+- Troubleshooting guide useful
+
+---
+
+#### 7.5 Go-Live Checklist & Sign-Off
+**Priority**: High  
+**Complexity**: Simple  
+**Dependencies**: All previous phases  
+**Files**: `docs/GO_LIVE_CHECKLIST.md`  
+**Timeline**: 1-2 days
+
+**Description**: Create comprehensive go-live checklist.
+
+**Implementation**:
+- [ ] Create detailed go-live checklist
+- [ ] Include all safety checks
+- [ ] Include monitoring setup
+- [ ] Include rollback procedures
+- [ ] Include emergency contacts
+- [ ] Performance baselines documented
+- [ ] Stakeholder sign-off process
+- [ ] Post-go-live monitoring plan
+
+**Acceptance Criteria**:
+- Checklist comprehensive
+- All items checked
+- Stakeholders signed off
+
+---
+
+## Summary & Recommendations
+
+### Critical Path (Do First)
+1. **Phase 1: Hallucination Hedge** (Weeks 1-2) - Critical safety
+2. **Phase 2: Multi-Agent Debate System** (Weeks 3-5) - High value
+
+### High Value (Do Soon)
+3. **Phase 3: Macro-Sentiment Analysis** (Weeks 6-8) - New signal source
+4. **Phase 7: Production Readiness** (Weeks 22-24) - Essential for deployment
+
+### Future Growth (Do Later)
+5. **Phase 5: LangGraph Integration** (Weeks 14-18) - Advanced workflows
+6. **Phase 4: Advanced Options** (Weeks 9-13) - Future capability
+7. **Phase 6: Advanced Backtesting** (Weeks 19-21) - Performance analysis
+
+### Timeline Summary
+- **Weeks 1-2**: Safety foundation (Hallucination Hedge)
+- **Weeks 3-5**: Enhanced decision making (Debate System)
+- **Weeks 6-8**: New signal source (Macro Sentiment)
+- **Weeks 9-13**: Options capabilities (can start later)
+- **Weeks 14-18**: Advanced workflows (LangGraph)
+- **Weeks 19-21**: Advanced backtesting
+- **Weeks 22-24**: Production readiness
+
+### Total Estimated Timeline
+- **Minimum Viable**: Phases 1-2, 7 (8 weeks)
+- **Full Implementation**: All phases (24 weeks / 6 months)
+
+### Key Dependencies
+- Hallucination Hedge (Phase 1) must be first
+- All other phases can proceed in parallel after Phase 1
+- Production readiness (Phase 7) depends on all feature phases
+
+### Resource Requirements
+- **Development**: 1-2 developers
+- **AI/LLM Costs**: $200-500/month (depending on usage)
+- **Data APIs**: Free tiers sufficient for start, may need paid later
+- **Infrastructure**: Existing infrastructure sufficient
+
+---
+
+## Second Review & Recommendations
+
+### Strengths of This Plan
+
+1. **Safety First**: Hallucination Hedge is critical and prioritized first
+2. **Builds on Existing Foundation**: Leverages current IBKR integration and agents
+3. **Incremental Value**: Each phase provides immediate value
+4. **Clear Priorities**: High/Medium/Low framework is well-defined
+5. **Realistic Timelines**: Complex features allocated appropriate time
+
+### Potential Improvements
+
+1. **Add Risk Analysis**: Each phase should include risk assessment
+2. **Add Cost Analysis**: Estimate API costs for LLM calls
+3. **Add Success Metrics**: Define measurable outcomes for each phase
+4. **Add Rollback Criteria**: When to abandon a phase if not working
+5. **Add A/B Testing**: Validate new features against baseline
+
+### Missing Considerations
+
+1. **Data Privacy**: Ensure macro data and news sources comply with terms of service
+2. **Regulatory Compliance**: Options trading has additional regulations
+3. **Model Drift**: LLM behavior can change over time, need monitoring
+4. **API Rate Limits**: Plan for rate limits on data sources
+5. **Disaster Recovery**: What if a workflow gets stuck in infinite loop?
+
+### Recommended Additions
+
+1. **Add Phase 0: Risk Assessment & Planning**
+   - Risk matrix for each phase
+   - Cost-benefit analysis
+   - Success criteria definition
+   - Rollback procedures
+
+2. **Add Continuous Integration Improvements**
+   - Automated testing for all new features
+   - Code quality gates (linting, type checking)
+   - Performance regression testing
+
+3. **Add Documentation Improvements**
+   - Architecture diagrams for each phase
+   - API documentation auto-generation
+   - Decision logs for architectural choices
+
+4. **Add Performance Budget**
+   - Max LLM calls per day
+   - Max API response time
+   - Max memory usage
+
+5. **Add Feature Flags**
+   - Ability to enable/disable features without code deployment
+   - Gradual rollout of new features
+   - A/B testing capabilities
+
+### Final Recommendation
+
+**Proceed with Phase 1 (Hallucination Hedge) immediately.** This is the most critical safety feature and provides immediate value.
+
+**Then implement Phase 2 (Debate System)** as it significantly enhances the existing agent system.
+
+**Evaluate results after Phase 2** before committing to full 6-month timeline. If early phases show strong value, continue. If not, reassess priorities.
+
+The plan is solid, well-structured, and builds appropriately on the existing TradeMind AI foundation.
+
+---
+
+*Plan Created: 2026-02-08*  
+*Total Estimated Timeline: 6 months (24 weeks) for full implementation*  
+*Minimum Viable: 8 weeks (Phases 1, 2, 7)*
+
+
+---
+
+## LangGraph Migration Tasks (New Priority)
+
+### Phase 1: Foundation (Week 1)
+
+#### L1. Install Dependencies
+- [ ] Install langgraph>=1.0.8
+- [ ] Install langchain-core, langchain-community
+- [ ] Update requirements.txt
+
+#### L2. Create Directory Structure
+- [ ] Create src/langgraph/ directory
+- [ ] Create state.py (TradingState schema)
+- [ ] Create graph.py (graph construction)
+- [ ] Create nodes/ subdirectory
+- [ ] Create persistence.py (checkpointer config)
+
+#### L3. Define TradingState
+- [ ] Define TypedDict for state
+- [ ] Add all required fields
+- [ ] Add type annotations
+- [ ] Add state validation
+
+#### L4. Create Basic Graph Skeleton
+- [ ] Import StateGraph, START, END
+- [ ] Add placeholder nodes
+- [ ] Add linear edges
+- [ ] Compile with checkpointer
+- [ ] Test basic execution
+
+#### L5. Add Persistence Layer
+- [ ] Configure SqliteSaver
+- [ ] Set up database file
+- [ ] Test checkpoint/save
+- [ ] Test restore/resume
+
+#### L6. Set Up LangSmith (Optional)
+- [ ] Enable LANGSMITH_TRACING
+- [ ] Add API key to .env
+- [ ] Test trace visibility
+- [ ] Create evaluation runs
+
+---
+
+### Phase 2: Agent Migration (Week 2)
+
+#### L7. Technical Agent Migration
+- [ ] Create analysis_nodes.py
+- [ ] Implement technical_analysis() node
+- [ ] Preserve existing logic
+- [ ] Return state updates
+- [ ] Add tests
+
+#### L8. Sentiment Agent Migration
+- [ ] Implement sentiment_analysis() node
+- [ ] Preserve caching
+- [ ] Add error handling
+- [ ] Add tests
+
+#### L9. Risk Manager Migration
+- [ ] Implement risk_assessment() node
+- [ ] Integrate IBKRRiskManager
+- [ ] Add veto logic
+- [ ] Calculate position sizing
+- [ ] Add tests
+
+#### L10. Orchestrator Migration
+- [ ] Implement make_decision() node
+- [ ] Weighted voting logic
+- [ ] Confidence aggregation
+- [ ] Decision routing
+- [ ] Add tests
+
+#### L11. Create Base Node Templates
+- [ ] Create node_base.py
+- [ ] Add error handling decorator
+- [ ] Add logging helpers
+- [ ] Add state update helpers
+
+---
+
+### Phase 3: Advanced Features (Week 3)
+
+#### L12. Create Debate Agents
+- [ ] Create src/agents/debate.py
+- [ ] Implement BullAgent
+- [ ] Implement BearAgent
+- [ ] Implement JudgeAgent
+- [ ] Add LLM argument generation
+
+#### L13. Debate Protocol Node
+- [ ] Implement debate_protocol() node
+- [ ] Present cases logic
+- [ ] Cross-examination logic
+- [ ] Final verdict logic
+- [ ] Track debate history
+
+#### L14. Conditional Edges
+- [ ] Implement should_debate()
+- [ ] Implement should_review()
+- [ ] Implement should_execute()
+- [ ] Implement should_retry()
+- [ ] Add edges to graph
+- [ ] Test all paths
+
+#### L15. Human-in-the-Loop
+- [ ] Implement human_review() node
+- [ ] Add interrupt logic
+- [ ] Create approval API endpoint
+- [ ] Add notification hooks
+- [ ] Add tests
+
+#### L16. Memory Implementation
+- [ ] Add short-term memory (messages)
+- [ ] Add long-term memory (DB)
+- [ ] Implement state versioning
+- [ ] Add retrieval logic
+- [ ] Tests
+
+---
+
+### Phase 4: Integration & Testing (Week 4)
+
+#### L17. Execute Trade Node
+- [ ] Implement execute_trade() node
+- [ ] Connect SignalExecutor
+- [ ] Add error handling
+- [ ] Track order status
+- [ ] Add tests
+
+#### L18. End-to-End Tests
+- [ ] Test BUY scenario
+- [ ] Test SELL scenario
+- [ ] Test HOLD scenario
+- [ ] Test debate flow
+- [ ] Test human approval flow
+- [ ] Test veto flow
+- [ ] Test retry/loop
+
+#### L19. IBKR Integration Tests
+- [ ] Test connection
+- [ ] Test order placement
+- [ ] Test order cancellation
+- [ ] Test position sync
+- [ ] Test error handling
+
+#### L20. Performance Tests
+- [ ] Measure execution time
+- [ ] Test concurrent workflows
+- [ ] Test with many symbols
+- [ ] Memory profiling
+- [ ] Optimization
+
+#### L21. Backtesting Comparison
+- [ ] Run backtest with LangGraph
+- [ ] Compare to baseline
+- [ ] Measure performance
+- [ ] Document results
+- [ ] A/B testing
+
+#### L22. Documentation
+- [ ] Update README
+- [ ] Create migration guide
+- [ ] API documentation
+- [ ] Architecture diagrams
+- [ ] Training materials
+
+---
+
+### Post-Migration Tasks
+
+#### L23. Monitoring & Observability
+- [ ] Set up dashboards
+- [ ] Configure alerts
+- [ ] Log key metrics
+- [ ] Create incident response plan
+
+#### L24. Gradual Rollout
+- [ ] Feature flag implementation
+- [ ] 10% traffic test
+- [ ] 50% traffic test
+- [ ] Full rollout
+- [ ] Monitor metrics
+
+#### L25. Performance Optimization
+- [ ] Profile hot paths
+- [ ] Optimize state updates
+- [ ] Cache frequently accessed data
+- [ ] Reduce memory usage
+- [ ] Improve streaming
+
+---
+
+*Last Updated: 2026-02-08*
+*Based on: LANGGRAPH_MIGRATION_PLAN.md*
+

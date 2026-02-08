@@ -31,6 +31,7 @@ async def test_order_without_connection():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_cancel_nonexistent_order():
     """Test cancelling an order that doesn't exist."""
     broker = IBKRBroker(port=7497)
@@ -43,6 +44,7 @@ async def test_cancel_nonexistent_order():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_invalid_symbol():
     """Test handling invalid symbol."""
     broker = IBKRBroker(port=7497)
@@ -55,6 +57,7 @@ async def test_invalid_symbol():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_invalid_order_validation():
     """Test validating an order with invalid parameters."""
     broker = IBKRBroker(port=7497)
@@ -77,6 +80,7 @@ async def test_invalid_order_validation():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_negative_quantity_order():
     """Test placing an order with negative quantity."""
     broker = IBKRBroker(port=7497)
@@ -98,6 +102,7 @@ async def test_negative_quantity_order():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_stop_order_without_stop_price():
     """Test stop order without stop price."""
     broker = IBKRBroker(port=7497)
@@ -120,6 +125,7 @@ async def test_stop_order_without_stop_price():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_stop_limit_order_without_prices():
     """Test stop limit order without both prices."""
     broker = IBKRBroker(port=7497)
