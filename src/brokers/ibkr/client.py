@@ -1,18 +1,17 @@
 """Interactive Brokers broker implementation using ib_insync."""
 import asyncio
-from typing import Optional, List, Dict, Any
-from decimal import Decimal
+from typing import Optional, List, Dict, Any, Tuple
 import logging
 
 try:
-    from ib_insync import IB, Stock, MarketOrder, LimitOrder, StopOrder, OrderStatus as IBOrderStatus
+    from ib_insync import IB, Stock, MarketOrder, LimitOrder, StopOrder, StopLimitOrder
 except ImportError:
     IB = None
     Stock = None
     MarketOrder = None
     LimitOrder = None
     StopOrder = None
-    IBOrderStatus = None
+    StopLimitOrder = None
 
 from src.brokers.base import (
     BaseBroker, Order, Position, Account,
@@ -39,6 +38,9 @@ class IBKRBroker(BaseBroker):
         self.client_id = client_id
         self.account = account
         self.paper_trading = paper_trading
+        self.exchange = "SMART"
+        self.currency = "USD"
+        self.market_data_timeout = 0.1
 
         if IB is None:
             raise ImportError(
@@ -59,7 +61,8 @@ class IBKRBroker(BaseBroker):
             )
             self._connected = True
 
-            account_id = self.account or self.ib.managedAccounts()[0] if self.ib.managedAccounts() else None
+            managed_accounts = self.ib.managedAccounts()
+            account_id = self.account or (managed_accounts[0] if managed_accounts else None)
             if account_id:
                 await self.ib.reqAccountSummaryAsync()
                 logger.info(f"Connected to IBKR account: {account_id}")
@@ -83,7 +86,7 @@ class IBKRBroker(BaseBroker):
         if not self.is_connected:
             raise ConnectionError("Not connected to IBKR")
 
-        contract = Stock(order.symbol, "SMART", "USD")
+        contract = Stock(order.symbol, self.exchange, self.currency)
 
         if order.order_type == OrderType.MARKET:
             ib_order = MarketOrder(order.side.value, order.quantity)
@@ -91,6 +94,8 @@ class IBKRBroker(BaseBroker):
             ib_order = LimitOrder(order.side.value, order.quantity, order.price)
         elif order.order_type == OrderType.STOP:
             ib_order = StopOrder(order.side.value, order.quantity, order.stop_price)
+        elif order.order_type == OrderType.STOP_LIMIT:
+            ib_order = StopLimitOrder(order.side.value, order.quantity, order.stop_price, order.price)
         else:
             raise ValueError(f"Unsupported order type: {order.order_type}")
 
@@ -118,8 +123,12 @@ class IBKRBroker(BaseBroker):
         ib_order_id = int(order_id)
 
         try:
-            await self.ib.cancelOrderAsync(ib_order_id)
-            order.status = OrderStatus.CANCELLED
+            trade = await self.ib.cancelOrderAsync(ib_order_id)
+            await asyncio.sleep(0.1)
+            if trade and trade.orderStatus:
+                order.status = self._map_ib_order_status(trade.orderStatus.status)
+            else:
+                order.status = OrderStatus.CANCELLED
             logger.info(f"Cancelled order {order_id}")
             return True
         except Exception as e:
@@ -176,7 +185,8 @@ class IBKRBroker(BaseBroker):
                 except ValueError:
                     pass
 
-        account_id = self.account or (self.ib.managedAccounts()[0] if self.ib.managedAccounts() else "unknown")
+        managed_accounts = self.ib.managedAccounts()
+        account_id = self.account or (managed_accounts[0] if managed_accounts else "unknown")
 
         return Account(
             account_id=account_id,
@@ -185,8 +195,8 @@ class IBKRBroker(BaseBroker):
             buying_power=account_values.get('BuyingPower', 0.0),
             margin_available=account_values.get('AvailableFunds', 0.0),
             total_pnl=account_values.get('RealizedPnL', 0.0),
-            daily_pnl=account_values.get('UnrealizedPnL', 0.0),
-            currency="USD",
+            daily_pnl=account_values.get('NetLiquidationByCurrency', 0.0) - account_values.get('PreviousEquityWithLoanValue', 0.0),
+            currency=self.currency,
             positions=await self.get_positions()
         )
 
@@ -195,10 +205,10 @@ class IBKRBroker(BaseBroker):
         if not self.is_connected:
             raise ConnectionError("Not connected to IBKR")
 
-        contract = Stock(symbol, "SMART", "USD")
+        contract = Stock(symbol, self.exchange, self.currency)
         ticker = await self.ib.reqMktDataAsync(contract)
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(self.market_data_timeout)
 
         price = ticker.marketPrice()
         if price is None:
@@ -211,7 +221,7 @@ class IBKRBroker(BaseBroker):
 
         return float(price)
 
-    async def validate_order(self, order: Order) -> tuple[bool, str]:
+    async def validate_order(self, order: Order) -> Tuple[bool, str]:
         """Validate if an order can be placed."""
         if not self.is_connected:
             return False, "Not connected to IBKR"
@@ -224,6 +234,9 @@ class IBKRBroker(BaseBroker):
 
         if order.order_type == OrderType.STOP and order.stop_price is None:
             return False, "Stop orders require a stop price"
+
+        if order.order_type == OrderType.STOP_LIMIT and (order.stop_price is None or order.price is None):
+            return False, "Stop limit orders require both stop and limit prices"
 
         try:
             price = await self.get_market_price(order.symbol)

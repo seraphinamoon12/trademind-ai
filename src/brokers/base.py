@@ -1,10 +1,9 @@
 """Base broker interface and data models."""
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
-from decimal import Decimal
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 
 class OrderStatus(Enum):
@@ -41,7 +40,7 @@ class Order:
     filled_quantity: int = 0
     avg_fill_price: Optional[float] = None
     commission: Optional[float] = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -122,6 +121,6 @@ class BaseBroker(ABC):
         pass
 
     @abstractmethod
-    async def validate_order(self, order: Order) -> tuple[bool, str]:
+    async def validate_order(self, order: Order) -> Tuple[bool, str]:
         """Validate if an order can be placed."""
         pass

@@ -1,5 +1,5 @@
 """Broker factory for creating broker instances."""
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 
 from src.brokers.base import BaseBroker
@@ -47,6 +47,6 @@ class BrokerFactory:
             raise ValueError(f"Unsupported broker type: {broker_type}")
 
     @staticmethod
-    def list_supported_brokers() -> list[str]:
+    def list_supported_brokers() -> List[str]:
         """Return list of supported broker types."""
         return ['paper', 'ibkr']

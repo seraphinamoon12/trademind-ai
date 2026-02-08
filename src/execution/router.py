@@ -1,6 +1,6 @@
 """Execution router for routing orders to appropriate broker."""
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 
 from src.brokers.base import BaseBroker, Order, Position, Account, OrderStatus, OrderType, OrderSide
@@ -168,7 +168,7 @@ class ExecutionRouter:
         else:
             raise NotImplementedError(f"Broker {self.broker_type} does not support market price queries")
 
-    async def _validate_order(self, order: Order) -> tuple[bool, str]:
+    async def _validate_order(self, order: Order) -> Tuple[bool, str]:
         """Validate an order before placement."""
         if order.quantity <= 0:
             return False, "Order quantity must be positive"

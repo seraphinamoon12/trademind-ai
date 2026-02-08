@@ -115,6 +115,14 @@ class Settings(BaseSettings):
     ibkr_paper_trading: bool = Field(default=True)
     ibkr_order_timeout: int = Field(default=30)
     ibkr_max_order_value: float = Field(default=10000.0)
+    ibkr_retry_attempts: int = Field(default=3)
+    ibkr_retry_delay_seconds: int = Field(default=1)
+    ibkr_max_daily_orders: int = Field(default=100)
+    ibkr_position_size_limit_pct: float = Field(default=0.10)
+    ibkr_enable_market_data: bool = Field(default=True)
+    ibkr_snapshot_data: bool = Field(default=False)
+    ibkr_real_time_bars: bool = Field(default=False)
+    ibkr_delayed_data: bool = Field(default=True)
 
     class Config:
         env_file = ".env"
@@ -159,7 +167,18 @@ if ibkr_config and 'ibkr' in ibkr_config:
 if ibkr_config and 'order' in ibkr_config:
     order_cfg = ibkr_config['order']
     settings.ibkr_order_timeout = order_cfg.get('timeout_seconds', settings.ibkr_order_timeout)
+    settings.ibkr_retry_attempts = order_cfg.get('retry_attempts', settings.ibkr_retry_attempts)
+    settings.ibkr_retry_delay_seconds = order_cfg.get('retry_delay_seconds', settings.ibkr_retry_delay_seconds)
 
 if ibkr_config and 'risk' in ibkr_config:
     risk_cfg = ibkr_config['risk']
     settings.ibkr_max_order_value = risk_cfg.get('max_order_value', settings.ibkr_max_order_value)
+    settings.ibkr_max_daily_orders = risk_cfg.get('max_daily_orders', settings.ibkr_max_daily_orders)
+    settings.ibkr_position_size_limit_pct = risk_cfg.get('position_size_limit_pct', settings.ibkr_position_size_limit_pct)
+
+if ibkr_config and 'market_data' in ibkr_config:
+    market_data_cfg = ibkr_config['market_data']
+    settings.ibkr_enable_market_data = market_data_cfg.get('enable', settings.ibkr_enable_market_data)
+    settings.ibkr_snapshot_data = market_data_cfg.get('snapshot_data', settings.ibkr_snapshot_data)
+    settings.ibkr_real_time_bars = market_data_cfg.get('real_time_bars', settings.ibkr_real_time_bars)
+    settings.ibkr_delayed_data = market_data_cfg.get('delayed_data', settings.ibkr_delayed_data)
