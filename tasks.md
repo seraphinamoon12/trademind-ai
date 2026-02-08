@@ -490,3 +490,688 @@
 - [ ] Plugin System - Custom commands via plugins
 - [ ] Remote Control - CLI for remote servers via SSH
 - [ ] Notification Integration - Slack/Discord alerts via CLI
+
+---
+
+## Interactive Brokers Integration Tasks
+
+### Week 1: Foundation
+
+#### TWS Setup & Configuration
+- [ ] Download and install TWS (Trader Workstation)
+- [ ] Download and install IB Gateway (for production headless operation)
+- [ ] Create IBKR paper trading account at interactivebrokers.com
+- [ ] Log in to TWS/IB Gateway with paper account credentials
+- [ ] Configure TWS API settings:
+  - [ ] Navigate to Edit > Global Configuration > API > Settings
+  - [ ] Enable "ActiveX and Socket Clients": YES
+  - [ ] Set socket port: 7497 (paper) / 7496 (live)
+  - [ ] Disable "Allow connections from localhost only" (for Docker)
+  - [ ] Add trusted IP: 127.0.0.1
+  - [ ] Uncheck "Read-Only API" (to allow trading)
+- [ ] Verify API connection by connecting to port 7497
+- [ ] Document TWS/IB Gateway authentication credentials securely
+
+#### Dependencies Installation
+- [ ] Add `ib_insync>=0.2.9` to requirements.txt
+- [ ] Add `pandas>=2.0.0` to requirements.txt (if not already present)
+- [ ] Run `pip install -r requirements.txt` to install dependencies
+- [ ] Test ib_insync installation by importing the library
+- [ ] Verify ib_insync version compatibility
+- [ ] Install xvfb (X Virtual Framebuffer) for headless IB Gateway
+- [ ] Install required system dependencies: libxtst6, libxi6, libxrender1
+
+#### Project Structure Creation
+- [ ] Create `src/brokers/` directory
+- [ ] Create `src/brokers/__init__.py`
+- [ ] Create `src/brokers/base.py` - Abstract broker interface
+- [ ] Create `src/brokers/ibkr/` subdirectory
+- [ ] Create `src/brokers/ibkr/__init__.py`
+- [ ] Create `src/brokers/ibkr/client.py` - IBKRBroker class
+- [ ] Create `src/brokers/ibkr/orders.py` - Order construction helpers
+- [ ] Create `src/brokers/ibkr/positions.py` - Position tracking
+- [ ] Create `src/brokers/ibkr/account.py` - Account info
+- [ ] Create `src/brokers/ibkr/market_data.py` - Market data streaming
+- [ ] Create `src/brokers/ibkr/utils.py` - Utility functions
+- [ ] Create `src/brokers/ibkr/risk_checks.py` - Risk management
+- [ ] Verify existing `src/brokers/paper/` directory structure
+- [ ] Create `src/execution/` directory
+- [ ] Create `src/execution/__init__.py`
+- [ ] Create `src/execution/router.py` - Order routing
+- [ ] Create `src/execution/factory.py` - Broker factory
+- [ ] Create `config/ibkr_config.yaml` - IBKR configuration file
+
+#### Abstract Broker Interface Implementation
+- [ ] Define `Order` dataclass in `src/brokers/base.py`:
+  - [ ] symbol: str
+  - [ ] quantity: int
+  - [ ] side: str ('BUY' or 'SELL')
+  - [ ] order_type: str ('MARKET', 'LIMIT', 'STOP')
+  - [ ] limit_price: Optional[Decimal]
+  - [ ] stop_price: Optional[Decimal]
+  - [ ] time_in_force: str ('DAY', 'GTC', 'IOC', 'FOK')
+- [ ] Define `Position` dataclass in `src/brokers/base.py`:
+  - [ ] symbol: str
+  - [ ] quantity: int
+  - [ ] avg_cost: Decimal
+  - [ ] market_price: Decimal
+  - [ ] market_value: Decimal
+  - [ ] unrealized_pnl: Decimal
+- [ ] Define `Account` dataclass in `src/brokers/base.py`:
+  - [ ] account_id: str
+  - [ ] cash_balance: Decimal
+  - [ ] portfolio_value: Decimal
+  - [ ] buying_power: Decimal
+  - [ ] day_trades_remaining: int
+- [ ] Define `BaseBroker` abstract class in `src/brokers/base.py`:
+  - [ ] `async def connect(self) -> bool`
+  - [ ] `async def disconnect(self)`
+  - [ ] `async def place_order(self, order: Order) -> Dict`
+  - [ ] `async def cancel_order(self, order_id: str) -> bool`
+  - [ ] `async def get_positions(self) -> List[Position]`
+  - [ ] `async def get_account(self) -> Account`
+  - [ ] `async def get_orders(self, status: str = 'open') -> List[Dict]`
+- [ ] Add docstrings to all abstract methods
+- [ ] Add type hints to all method signatures
+
+#### IBKR Connection Manager
+- [ ] Implement `IBKRBroker` class in `src/brokers/ibkr/client.py`
+- [ ] Import ib_insync components: IB, Stock, MarketOrder, LimitOrder, StopOrder
+- [ ] Implement `__init__` method with parameters:
+  - [ ] host: str = '127.0.0.1'
+  - [ ] port: int = 7497
+  - [ ] client_id: int = 1
+- [ ] Initialize ib_insync IB instance
+- [ ] Initialize connection state variables (_connected, _reconnecting)
+- [ ] Implement `async def connect(self) -> bool`:
+  - [ ] Call `await self.ib.connectAsync()`
+  - [ ] Handle connection errors with try/except
+  - [ ] Set _connected flag on success
+  - [ ] Log connection status
+  - [ ] Return success/failure boolean
+- [ ] Implement `async def disconnect(self)`:
+  - [ ] Check if connected before disconnecting
+  - [ ] Call `self.ib.disconnect()`
+  - [ ] Set _connected flag to False
+- [ ] Add connection status property `is_connected`
+- [ ] Test connection with TWS/IB Gateway running
+- [ ] Test connection with TWS/IB Gateway stopped
+- [ ] Test connection with incorrect port
+- [ ] Test connection with invalid credentials
+- [ ] Add logging for all connection events
+- [ ] Add reconnection logic with retry attempts
+
+#### Configuration Setup
+- [ ] Create `config/ibkr_config.yaml` with following sections:
+  - [ ] broker.type (ibkr or paper)
+  - [ ] ibkr.host (127.0.0.1)
+  - [ ] ibkr.port (7497 for paper, 7496 for live)
+  - [ ] ibkr.client_id
+  - [ ] ibkr.reconnect_attempts
+  - [ ] ibkr.reconnect_delay (seconds)
+  - [ ] ibkr.default_order_type
+  - [ ] ibkr.time_in_force
+  - [ ] ibkr.max_order_size (shares)
+  - [ ] ibkr.max_order_value (dollars)
+  - [ ] ibkr.market_data_type (delayed/realtime)
+- [ ] Load IBKR config in `src/config.py`
+- [ ] Add IBKR settings to Settings class
+- [ ] Implement config validation for IBKR parameters
+- [ ] Add environment variable support for sensitive settings
+- [ ] Document all IBKR configuration parameters
+
+---
+
+### Week 2: Order Management
+
+#### Order Type Mapping Implementation
+- [ ] Create order type mapping table in `src/brokers/ibkr/orders.py`:
+  - [ ] MARKET → MarketOrder
+  - [ ] LIMIT → LimitOrder
+  - [ ] STOP → StopOrder
+  - [ ] STOP_LIMIT → StopLimitOrder
+- [ ] Implement `create_ibkr_order()` function:
+  - [ ] Accept TradeMind Order object as input
+  - [ ] Create appropriate IBKR contract (Stock)
+  - [ ] Map order type to IBKR order class
+  - [ ] Set order parameters (action, quantity, prices)
+  - [ ] Return (order, contract) tuple
+- [ ] Implement contract qualification:
+  - [ ] Add `await self.ib.qualifyContractsAsync()` call
+  - [ ] Handle contract qualification failures
+  - [ ] Log qualified contract details
+- [ ] Add order validation:
+  - [ ] Validate order quantity > 0
+  - [ ] Validate order side is BUY or SELL
+  - [ ] Validate order type is supported
+  - [ ] Validate limit_price for LIMIT orders
+  - [ ] Validate stop_price for STOP orders
+- [ ] Test order mapping for all order types
+- [ ] Test with invalid orders
+
+#### Place Order Implementation
+- [ ] Implement `async def place_order()` in `src/brokers/ibkr/client.py`:
+  - [ ] Call `create_ibkr_order()` to get IBKR order and contract
+  - [ ] Qualify the contract
+  - [ ] Call `self.ib.placeOrder(contract, order)`
+  - [ ] Extract trade object
+  - [ ] Return order details dictionary:
+    - [ ] order_id
+    - [ ] status
+    - [ ] filled
+    - [ ] remaining
+    - [ ] avg_fill_price
+- [ ] Add pre-trade risk checks:
+  - [ ] Call `IBKRRiskManager.validate_order()`
+  - [ ] Reject orders that fail validation
+  - [ ] Log rejection reason
+- [ ] Implement order timeout handling
+- [ ] Add comprehensive error handling
+- [ ] Test placing MARKET orders
+- [ ] Test placing LIMIT orders
+- [ ] Test placing STOP orders
+- [ ] Test order with invalid symbol
+- [ ] Test order with insufficient funds
+
+#### Cancel Order Implementation
+- [ ] Implement `async def cancel_order()` in `src/brokers/ibkr/client.py`:
+  - [ ] Accept order_id as parameter
+  - [ ] Call `self.ib.cancelOrder(order_id)`
+  - [ ] Handle cancellation errors
+  - [ ] Return success/failure boolean
+- [ ] Add order status check before cancellation
+- [ ] Test cancelling open orders
+- [ ] Test cancelling already filled orders
+- [ ] Test cancelling non-existent order
+
+#### Order Tracking Implementation
+- [ ] Implement `async def get_orders()` in `src/brokers/ibkr/client.py`:
+  - [ ] Accept status parameter ('open', 'filled', 'cancelled', 'all')
+  - [ ] Get all trades from `self.ib.trades()`
+  - [ ] Filter trades by status
+  - [ ] Return list of order dictionaries:
+    - [ ] order_id
+    - [ ] symbol
+    - [ ] action
+    - [ ] quantity
+    - [ ] status
+    - [ ] filled
+    - [ ] avg_fill_price
+- [ ] Implement order status mapping:
+  - [ ] PendingSubmit → 'pending'
+  - [ ] PreSubmitted → 'presubmitted'
+  - [ ] Submitted → 'open'
+  - [ ] Filled → 'filled'
+  - [ ] Cancelled → 'cancelled'
+- [ ] Test retrieving open orders
+- [ ] Test retrieving filled orders
+- [ ] Test retrieving all orders
+
+#### Order Event Handling
+- [ ] Set up ib_insync event callbacks:
+  - [ ] Register order status updates
+  - [ ] Register fill events
+  - [ ] Register error events
+- [ ] Implement order update logging
+- [ ] Store order history in database
+- [ ] Test event handling during order execution
+
+---
+
+### Week 3: Portfolio & Account
+
+#### Position Sync Implementation
+- [ ] Implement `async def get_positions()` in `src/brokers/ibkr/positions.py`:
+  - [ ] Get positions from `self.ib.positions()`
+  - [ ] For each position:
+    - [ ] Request market data for contract
+    - [ ] Wait for price to arrive
+    - [ ] Calculate market_value
+    - [ ] Calculate unrealized_pnl
+    - [ ] Create Position dataclass object
+  - [ ] Return list of Position objects
+- [ ] Handle missing market prices gracefully
+- [ ] Filter out zero-quantity positions
+- [ ] Test position retrieval
+- [ ] Verify position calculations
+
+#### Account Info Retrieval
+- [ ] Implement `async def get_account()` in `src/brokers/ibkr/account.py`:
+  - [ ] Get account values from `self.ib.accountValues()`
+  - [ ] Convert to dictionary by tag
+  - [ ] Extract key values:
+    - [ ] CashBalance
+    - [ ] NetLiquidation
+    - [ ] BuyingPower
+    - [ ] DayTradesRemaining
+  - [ ] Create Account dataclass object
+- [ ] Get account ID from `self.ib.managedAccounts()`
+- [ ] Handle missing account values
+- [ ] Test account info retrieval
+
+#### Portfolio Summary Implementation
+- [ ] Implement `async def get_portfolio_summary()`:
+  - [ ] Call `get_account()` to get account info
+  - [ ] Call `get_positions()` to get positions
+  - [ ] Calculate invested_value
+  - [ ] Calculate cash_percentage
+  - [ ] Calculate total_pnl
+  - [ ] Return summary dictionary:
+    - [ ] total_value
+    - [ ] cash_balance
+    - [ ] invested_value
+    - [ ] buying_power
+    - [ ] open_positions
+    - [ ] day_trades_remaining
+- [ ] Test portfolio summary
+
+#### Position Update Events
+- [ ] Set up position update callbacks
+- [ ] Track position changes in real-time
+- [ ] Sync positions to database
+- [ ] Test position update events
+
+#### Account Update Events
+- [ ] Set up account value update callbacks
+- [ ] Track account changes in real-time
+- [ ] Sync account data to database
+- [ ] Test account update events
+
+---
+
+### Week 4: Market Data
+
+#### Real-Time Data Streaming
+- [ ] Create `IBKRMarketData` class in `src/brokers/ibkr/market_data.py`
+- [ ] Implement `async def subscribe(symbol: str)`:
+  - [ ] Create Stock contract for symbol
+  - [ ] Qualify contract
+  - [ ] Request market data with `reqMktData()`
+  - [ ] Store ticker in _tickers dictionary
+  - [ ] Return ticker object
+- [ ] Implement `def get_quote(symbol: str)`:
+  - [ ] Get ticker from _tickers
+  - [ ] Return quote dictionary:
+    - [ ] bid
+    - [ ] ask
+    - [ ] last
+    - [ ] volume
+    - [ ] high
+    - [ ] low
+    - [ ] close
+    - [ ] time
+- [ ] Implement `def unsubscribe(symbol: str)`:
+  - [ ] Cancel market data subscription
+  - [ ] Remove from _tickers
+- [ ] Test subscribing to multiple symbols
+- [ ] Test quote retrieval
+- [ ] Test unsubscribing
+- [ ] Handle subscription limits
+
+#### Historical Data Retrieval
+- [ ] Implement `async def get_historical_data()`:
+  - [ ] Accept parameters:
+    - [ ] symbol
+    - [ ] duration (e.g., '1 D', '1 W', '1 M')
+    - [ ] bar_size (e.g., '1 min', '5 min', '1 day')
+    - [ ] what_to_show (TRADES, BID, ASK)
+  - [ ] Create and qualify contract
+  - [ ] Call `reqHistoricalDataAsync()`
+  - [ ] Convert bars to list of dictionaries:
+    - [ ] date
+    - [ ] open
+    - [ ] high
+    - [ ] low
+    - [ ] close
+    - [ ] volume
+  - [ ] Return list
+- [ ] Test historical data retrieval for different timeframes
+- [ ] Test with different bar sizes
+- [ ] Handle data request limits
+
+#### Market Data Manager
+- [ ] Implement subscription management
+- [ ] Track active subscriptions
+- [ ] Handle connection recovery
+- [ ] Implement data caching
+- [ ] Add market data quality checks
+- [ ] Implement subscription rotation (subscribe/unsubscribe as needed)
+
+#### Data Integration
+- [ ] Integrate with existing market data pipeline
+- [ ] Store real-time data in TimescaleDB
+- [ ] Store historical data in TimescaleDB
+- [ ] Update existing indicators with IBKR data
+- [ ] Test data quality and accuracy
+
+---
+
+### Week 5: TradeMind Integration
+
+#### Broker Factory Implementation
+- [ ] Implement `BrokerFactory` class in `src/execution/factory.py`:
+  - [ ] Implement `@staticmethod create_broker(broker_type: str, config: dict)`:
+    - [ ] Create IBKRBroker if type is 'ibkr'
+    - [ ] Create PaperBroker if type is 'paper'
+    - [ ] Raise ValueError for unknown types
+  - [ ] Load broker configuration from config
+  - [ ] Return broker instance
+- [ ] Add broker type validation
+- [ ] Test creating IBKR broker
+- [ ] Test creating paper broker
+- [ ] Test invalid broker type
+
+#### Execution Router Implementation
+- [ ] Implement `ExecutionRouter` class in `src/execution/router.py`:
+  - [ ] Accept broker in `__init__`
+  - [ ] Implement `async def execute_signal(signal: Dict)`:
+    - [ ] Create Order object from signal
+    - [ ] Call `broker.place_order()`
+    - [ ] Return result
+  - [ ] Add signal validation
+  - [ ] Add error handling
+- [ ] Implement `async def cancel_order(order_id: str)`
+- [ ] Implement `async def get_portfolio_status()`
+- [ ] Test execution with various signals
+- [ ] Test error handling
+
+#### Configuration Updates
+- [ ] Update `src/config.py` with IBKR settings
+- [ ] Add broker selection parameter to config
+- [ ] Implement broker hot-switching capability
+- [ ] Add broker configuration validation
+- [ ] Document broker configuration options
+
+#### Orchestrator Integration
+- [ ] Update orchestrator to use ExecutionRouter
+- [ ] Replace direct paper trading calls with broker interface
+- [ ] Add broker-specific signal adaptation
+- [ ] Update strategy execution flow
+- [ ] Test full trading flow with IBKR broker
+
+#### CLI Integration
+- [ ] Add broker-related CLI commands:
+  - [ ] `trademind broker status`
+  - [ ] `trademind broker connect`
+  - [ ] `trademind broker disconnect`
+- [ ] Update portfolio commands to use broker
+- [ ] Update trade commands to use broker
+- [ ] Test CLI commands with IBKR broker
+
+---
+
+### Week 6: Testing & Validation
+
+#### Unit Tests
+- [ ] Create `tests/brokers/` directory
+- [ ] Create `tests/brokers/__init__.py`
+- [ ] Create `tests/brokers/test_ibkr_client.py`:
+  - [ ] Test connection establishment
+  - [ ] Test connection failure handling
+  - [ ] Test disconnection
+  - [ ] Test MARKET order placement
+  - [ ] Test LIMIT order placement
+  - [ ] Test STOP order placement
+  - [ ] Test order cancellation
+  - [ ] Test order retrieval
+  - [ ] Test position retrieval
+  - [ ] Test account info retrieval
+- [ ] Create `tests/brokers/test_orders.py`:
+  - [ ] Test order mapping
+  - [ ] Test order validation
+  - [ ] Test contract qualification
+- [ ] Create `tests/brokers/test_market_data.py`:
+  - [ ] Test symbol subscription
+  - [ ] Test quote retrieval
+  - [ ] Test unsubscription
+  - [ ] Test historical data retrieval
+- [ ] Create `tests/execution/test_factory.py`:
+  - [ ] Test broker factory
+- [ ] Create `tests/execution/test_router.py`:
+  - [ ] Test execution router
+- [ ] Achieve >80% code coverage
+- [ ] Run all tests with pytest
+
+#### Integration Tests
+- [ ] Create `tests/brokers/test_integration.py`:
+  - [ ] Test full order lifecycle (place, track, cancel)
+  - [ ] Test position synchronization
+  - [ ] Test account synchronization
+  - [ ] Test market data streaming
+  - [ ] Test error recovery
+  - [ ] Test reconnection logic
+- [ ] Test with live TWS/IB Gateway
+- [ ] Test with offline TWS/IB Gateway
+- [ ] Test with network interruptions
+- [ ] Test concurrent order placement
+- [ ] Test large order handling
+
+#### Paper Trading Validation
+- [ ] Run system on paper account for 1 week
+- [ ] Execute at least 10 trades
+- [ ] Verify all orders executed correctly
+- [ ] Verify position tracking accuracy
+- [ ] Verify account balance updates
+- [ ] Verify P&L calculations
+- [ ] Compare with TWS/IB Gateway data
+- [ ] Document any discrepancies
+- [ ] Fix identified issues
+
+#### Performance Testing
+- [ ] Test order placement latency
+- [ ] Test market data latency
+- [ ] Test concurrent connections
+- [ ] Test memory usage under load
+- [ ] Identify and fix performance bottlenecks
+
+---
+
+### Go-Live Preparation
+
+#### Switch to Live Trading
+- [ ] Verify all tests passing
+- [ ] Complete successful paper trading week
+- [ ] Review all documented issues
+- [ ] Update config from port 7497 to 7496
+- [ ] Test connection to live account (without trading)
+- [ ] Verify account balance and permissions
+- [ ] Create live trading backup of config
+- [ ] Plan rollback procedure
+
+#### Monitoring Setup
+- [ ] Set up order status monitoring
+- [ ] Set up position monitoring
+- [ ] Set up account monitoring
+- [ ] Set up connection monitoring
+- [ ] Set up error tracking (Sentry or similar)
+- [ ] Create monitoring dashboard
+- [ ] Set up alert thresholds
+
+#### Alert Configuration
+- [ ] Configure connection failure alerts
+- [ ] Configure order failure alerts
+- [ ] Configure position limit alerts
+- [ [ ] Configure loss limit alerts
+- [ ] Configure system error alerts
+- [ ] Test all alerts
+- [ ] Set up notification channels (email, Slack, etc.)
+
+#### Emergency Procedures
+- [ ] Create emergency stop command
+- [ ] Create position liquidation procedure
+- [ ] Create system shutdown procedure
+- [ ] Create manual override procedures
+- [ ] Document emergency contacts
+- [ ] Create incident response plan
+- [ ] Test emergency stop procedure (on paper)
+
+#### Runbook Creation
+- [ ] Document daily operations
+- [ ] Document weekly maintenance
+- [ ] Document troubleshooting steps
+- [ ] Document recovery procedures
+- [ ] Document common issues and solutions
+- [ ] Create on-call schedule
+
+#### Pre-Go-Live Checklist
+- [ ] All unit tests passing
+- [ ] All integration tests passing
+- [ ] Paper trading validation complete
+- [ ] Monitoring configured and tested
+- [ ] Alerts configured and tested
+- [ ] Emergency procedures documented
+- [ ] Runbook complete
+- [ ] Team trained on procedures
+- [ ] Backup procedures in place
+- [ ] Regulatory compliance verified
+
+---
+
+### Risk Management Integration
+
+#### Pre-Trade Checks
+- [ ] Implement `IBKRRiskManager` class in `src/brokers/ibkr/risk_checks.py`:
+  - [ ] `async def validate_order(self, order: Order) -> Tuple[bool, str]`
+- [ ] Implement max order size check
+- [ ] Implement max order value check
+- [ ] Implement buying power check
+- [ ] Implement day trade limit check
+- [ ] Implement position size limit check
+- [ ] Implement concentration limit check
+- [ [ ] Implement volatility check
+- [ ] Add all checks to order placement flow
+- [ ] Test all risk checks
+
+#### Risk Configuration
+- [ ] Add risk parameters to `config/ibkr_config.yaml`:
+  - [ ] max_order_size
+  - [ ] max_order_value
+  - [ ] max_position_size
+  - [ ] max_sector_concentration
+  - [ ] daily_loss_limit
+  - [ ] volatility_threshold
+- [ ] Load risk config in Settings
+- [ ] Document all risk parameters
+
+#### Safety Integration
+- [ ] Integrate with existing Safety Circuit Breaker
+- [ ] Add IBKR-specific safety rules
+- [ ] Implement position-level stop-loss
+- [ [ ] Implement portfolio-level stop-loss
+- [ ] Test safety integration
+
+#### Compliance Checks
+- [ ] Implement pattern day trading rule checks
+- [ ] Implement margin requirement checks
+- [ ] Implement order size regulations
+- [ ] Document compliance requirements
+
+---
+
+### Docker Deployment
+
+#### IB Gateway Docker Setup
+- [ ] Create `Dockerfile.ibkr`:
+  - [ ] Use python:3.11-slim base image
+  - [ ] Install system dependencies (xvfb, libxtst6, libxi6, libxrender1)
+  - [ ] Download and install IB Gateway
+  - [ ] Copy application code
+  - [ ] Set up entry point
+- [ ] Test IB Gateway Docker build
+- [ ] Verify IB Gateway runs in container
+- [ ] Configure IB Gateway for headless operation
+
+#### Application Docker Setup
+- [ ] Update existing `Dockerfile` for IBKR integration
+- [ ] Add IBKR-specific dependencies
+- [ ] Configure network for TWS/IB Gateway access
+- [ ] Set up volume mounts for config
+- [ ] Configure environment variables
+- [ ] Test application Docker build
+
+#### Docker Compose Configuration
+- [ ] Create `docker-compose.yml`:
+  - [ ] Service for IB Gateway
+  - [ ] Service for TradeMind application
+  - [ ] Service for TimescaleDB
+  - [ ] Service for Redis
+  - [ ] Network configuration
+  - [ ] Volume configuration
+- [ ] Configure health checks
+- [ ] Configure restart policies
+- [ ] Test full stack deployment
+
+#### Production Deployment
+- [ ] Set up production server
+- [ ] Configure Docker daemon
+- [ ] Set up SSL/TLS
+- [ ] Configure firewall rules
+- [ ] Set up log rotation
+- [ ] Deploy production stack
+- [ ] Verify all services running
+- [ ] Test trading flow
+
+#### Monitoring & Logging
+- [ ] Set up centralized logging
+- [ ] Configure log aggregation
+- [ ] Set up metrics collection
+- [ ] Create dashboards
+- [ ] Set up alerting
+- [ ] Test monitoring stack
+
+---
+
+### Documentation
+
+#### Setup Documentation
+- [ ] Create `docs/IBKR_SETUP.md`:
+  - [ ] TWS/IB Gateway installation instructions
+  - [ ] Paper account creation guide
+  - [ ] API configuration steps
+  - [ ] Connection troubleshooting
+  - [ ] Common issues and solutions
+
+#### API Documentation
+- [ ] Document BaseBroker interface
+- [ ] Document IBKRBroker methods
+- [ ] Document Order, Position, Account dataclasses
+- [ ] Document ExecutionRouter methods
+- [ ] Add code examples
+
+#### Configuration Documentation
+- [ ] Document all IBKR config parameters
+- [ ] Document risk management parameters
+- [ ] Add example configurations
+- [ ] Document environment variables
+
+#### Deployment Documentation
+- [ ] Document Docker deployment steps
+- [ ] Document production setup
+- [ [ ] Document monitoring setup
+- [ ] Document emergency procedures
+- [ ] Create deployment runbook
+
+---
+
+### Final Validation
+
+#### End-to-End Testing
+- [ ] Test complete trading workflow
+- [ ] Test error recovery
+- [ ] Test system restart
+- [ ] Test backup/restore
+- [ ] Load test system
+- [ ] Validate all integrations
+
+#### Sign-Off
+- [ ] Code review complete
+- [ ] Security review complete
+- [ ] Performance review complete
+- [ ] Documentation complete
+- [ ] All stakeholders sign off
+- [ ] Ready for production deployment
+
+---
+
+*Last Updated: 2026-02-07*  
+*Based on: IBKR_INTEGRATION_PLAN.md*
