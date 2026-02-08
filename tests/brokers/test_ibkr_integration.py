@@ -1,5 +1,6 @@
 """Integration tests for IBKR broker."""
 import pytest
+import pytest_asyncio
 import asyncio
 from src.brokers.ibkr.client import IBKRBroker
 from src.brokers.ibkr.risk_manager import IBKRRiskManager
@@ -10,7 +11,7 @@ from src.brokers.base import Order, OrderType, OrderSide
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def connected_broker():
     """Create connected broker for integration tests."""
     broker = IBKRBroker(port=7497, paper_trading=True)
@@ -19,7 +20,7 @@ async def connected_broker():
     await broker.disconnect()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def risk_manager(connected_broker):
     """Create risk manager with test config."""
     config = {
@@ -31,7 +32,7 @@ async def risk_manager(connected_broker):
     return IBKRRiskManager(connected_broker, config)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def signal_executor(connected_broker, risk_manager):
     """Create signal executor for testing."""
     return SignalExecutor(connected_broker, risk_manager)

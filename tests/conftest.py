@@ -1,5 +1,6 @@
 """Pytest configuration for IBKR tests."""
 import pytest
+import pytest_asyncio
 import asyncio
 
 
@@ -11,7 +12,7 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def paper_broker():
     """Create paper broker for testing without IBKR connection."""
     from src.execution.paper import PaperBroker

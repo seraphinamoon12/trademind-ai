@@ -1,5 +1,6 @@
 """Unit tests for IBKR broker client."""
 import pytest
+import pytest_asyncio
 import asyncio
 from datetime import datetime, timezone
 from src.brokers.ibkr.client import IBKRBroker
@@ -9,7 +10,7 @@ from src.brokers.base import Order, OrderType, OrderSide
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def broker():
     """Create and connect IBKR broker for testing."""
     broker = IBKRBroker(port=7497, paper_trading=True)
