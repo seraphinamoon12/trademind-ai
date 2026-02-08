@@ -49,6 +49,8 @@ class IBKRBroker(BaseBroker):
 
         self.ib = IB()
         self._orders: Dict[str, Order] = {}
+        self._tickers: Dict[str, Any] = {}
+        self._account_values: Dict[str, Any] = {}
 
     async def connect(self) -> None:
         """Establish connection to IBKR TWS or Gateway."""
@@ -60,6 +62,10 @@ class IBKRBroker(BaseBroker):
                 timeout=10
             )
             self._connected = True
+
+            self._setup_order_callbacks()
+            self._setup_position_callbacks()
+            self._setup_account_callbacks()
 
             managed_accounts = self.ib.managedAccounts()
             account_id = self.account or (managed_accounts[0] if managed_accounts else None)
@@ -142,6 +148,62 @@ class IBKRBroker(BaseBroker):
 
         logger.warning(f"Order {order_id} not found")
         return OrderStatus.PENDING
+
+    async def get_orders(self, status: Optional[str] = None) -> List[Order]:
+        """
+        Get orders with optional status filtering.
+
+        Args:
+            status: Filter by status - "open", "filled", "cancelled", or None for all
+
+        Returns:
+            List of Order objects
+        """
+        if not self.is_connected:
+            raise ConnectionError("Not connected to IBKR")
+
+        orders = []
+        for trade in self.ib.trades():
+            if not trade.orderStatus:
+                continue
+
+            ib_status = self._map_ib_order_status(trade.orderStatus.status)
+            if status is not None:
+                status_lower = status.lower()
+                if status_lower == "open" and ib_status not in (OrderStatus.PENDING, OrderStatus.SUBMITTED, OrderStatus.PARTIAL):
+                    continue
+                elif status_lower == "filled" and ib_status != OrderStatus.FILLED:
+                    continue
+                elif status_lower == "cancelled" and ib_status != OrderStatus.CANCELLED:
+                    continue
+
+            order_id = str(trade.orderStatus.orderId)
+            symbol = trade.contract.symbol
+
+            side = OrderSide.BUY if trade.order.action == "BUY" else OrderSide.SELL
+            order_type = self._map_ib_order_type(trade.order.orderType)
+            quantity = int(trade.order.totalQuantity)
+            price = float(trade.order.lmtPrice) if trade.order.lmtPrice else None
+            stop_price = float(trade.order.auxPrice) if trade.order.auxPrice else None
+
+            order = Order(
+                order_id=order_id,
+                symbol=symbol,
+                side=side,
+                order_type=order_type,
+                quantity=quantity,
+                price=price,
+                stop_price=stop_price,
+                status=ib_status,
+                filled_quantity=int(trade.orderStatus.filled),
+                avg_fill_price=float(trade.orderStatus.avgFillPrice) if trade.orderStatus.avgFillPrice else None,
+                commission=float(trade.commissionReport().commission) if trade.commissionReport() else None
+            )
+
+            orders.append(order)
+            self._orders[order_id] = order
+
+        return orders
 
     async def get_positions(self) -> List[Position]:
         """Get all current positions."""
@@ -273,3 +335,124 @@ class IBKRBroker(BaseBroker):
             'Inactive': OrderStatus.REJECTED,
         }
         return status_map.get(status, OrderStatus.PENDING)
+
+    def _map_ib_order_type(self, order_type: str) -> OrderType:
+        """Map IB order type to internal OrderType enum."""
+        type_map = {
+            'MKT': OrderType.MARKET,
+            'LMT': OrderType.LIMIT,
+            'STP': OrderType.STOP,
+            'STP LMT': OrderType.STOP_LIMIT,
+        }
+        return type_map.get(order_type, OrderType.MARKET)
+
+    def _setup_order_callbacks(self):
+        """Setup callbacks for order status updates."""
+        self.ib.orderStatusEvent += self._on_order_status
+        logger.info("Order callbacks registered")
+
+    def _on_order_status(self, trade):
+        """Handle order status updates from IBKR."""
+        if trade.orderStatus and trade.orderStatus.orderId:
+            order_id = str(trade.orderStatus.orderId)
+            ib_status = self._map_ib_order_status(trade.orderStatus.status)
+
+            if order_id in self._orders:
+                order = self._orders[order_id]
+                old_status = order.status
+                order.status = ib_status
+                order.filled_quantity = int(trade.orderStatus.filled)
+                order.avg_fill_price = float(trade.orderStatus.avgFillPrice) if trade.orderStatus.avgFillPrice else None
+
+                if trade.commissionReport():
+                    order.commission = float(trade.commissionReport().commission)
+
+                logger.info(f"Order {order_id} status updated: {old_status} -> {ib_status}")
+
+    def _setup_position_callbacks(self):
+        """Setup callbacks for position updates."""
+        self.ib.positionEvent += self._on_position_update
+        logger.info("Position callbacks registered")
+
+    def _on_position_update(self, position):
+        """Handle position updates."""
+        symbol = position.contract.symbol
+        quantity = position.position
+        logger.info(f"Position update for {symbol}: {quantity} shares")
+
+    def _setup_account_callbacks(self):
+        """Setup callbacks for account value updates."""
+        self.ib.accountValueEvent += self._on_account_update
+        logger.info("Account callbacks registered")
+
+    def _on_account_update(self, value):
+        """Handle account value updates."""
+        tag = value.tag
+        val = value.value
+        try:
+            self._account_values[tag] = float(val)
+            logger.debug(f"Account value update: {tag} = {val}")
+        except (ValueError, TypeError):
+            pass
+
+    async def get_portfolio_summary(self) -> Dict[str, Any]:
+        """
+        Get portfolio summary including:
+        - total_value: Total portfolio value
+        - cash_balance: Available cash
+        - invested_value: Value of all positions
+        - buying_power: Available buying power
+        - margin_used: How much margin is used
+        - open_positions: Number of open positions
+        - daily_pnl: Today's P&L
+        - total_pnl: Total realized P&L
+        """
+        if not self.is_connected:
+            raise ConnectionError("Not connected to IBKR")
+
+        account = await self.get_account()
+        positions = await self.get_positions()
+
+        invested_value = sum(pos.market_value for pos in positions)
+        open_positions = len([pos for pos in positions if pos.quantity != 0])
+        margin_used = account.portfolio_value - account.margin_available
+
+        return {
+            "total_value": account.portfolio_value,
+            "cash_balance": account.cash_balance,
+            "invested_value": invested_value,
+            "buying_power": account.buying_power,
+            "margin_used": margin_used,
+            "open_positions": open_positions,
+            "daily_pnl": account.daily_pnl,
+            "total_pnl": account.total_pnl
+        }
+
+    async def subscribe_market_data(self, symbol: str) -> None:
+        """Subscribe to real-time market data for a symbol."""
+        if not self.is_connected:
+            raise ConnectionError("Not connected to IBKR")
+
+        contract = Stock(symbol, self.exchange, self.currency)
+        ticker = self.ib.reqMktData(contract)
+        self._tickers[symbol] = ticker
+        logger.info(f"Subscribed to market data for {symbol}")
+
+    def get_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Get current quote for subscribed symbol."""
+        if symbol not in self._tickers:
+            logger.warning(f"No ticker data for {symbol}")
+            return None
+
+        ticker = self._tickers[symbol]
+        return {
+            "bid": ticker.bid,
+            "ask": ticker.ask,
+            "last": ticker.last,
+            "volume": ticker.volume,
+            "high": ticker.high,
+            "low": ticker.low,
+            "close": ticker.close,
+            "bid_size": ticker.bidSize,
+            "ask_size": ticker.askSize
+        }

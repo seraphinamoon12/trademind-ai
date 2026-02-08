@@ -106,6 +106,11 @@ class BaseBroker(ABC):
         pass
 
     @abstractmethod
+    async def get_orders(self, status: Optional[str] = None) -> List[Order]:
+        """Get orders with optional status filtering."""
+        pass
+
+    @abstractmethod
     async def get_positions(self) -> List[Position]:
         """Get all current positions."""
         pass
@@ -113,6 +118,11 @@ class BaseBroker(ABC):
     @abstractmethod
     async def get_account(self) -> Account:
         """Get account information."""
+        pass
+
+    @abstractmethod
+    async def get_portfolio_summary(self) -> Dict[str, Any]:
+        """Get comprehensive portfolio summary."""
         pass
 
     @abstractmethod
