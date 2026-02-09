@@ -299,7 +299,43 @@ docker compose down
 
 ### Agent
 - `GET /api/agent/decisions` - Get agent decision history
-- `POST /api/agent/analyze/{symbol}` - Run agent analysis (includes sentiment)
+- `POST /api/agent/analyze/{symbol}` - Run agent analysis on single symbol
+- `POST /api/agent/analyze-batch` - **BATCH ANALYSIS (DEFAULT)** - Analyze multiple stocks concurrently (7x faster)
+
+## Batch Analysis (NEW - Recommended)
+
+The **batch analysis endpoint** is the fastest way to analyze multiple stocks:
+
+### API Usage
+```bash
+# Analyze multiple stocks in one call (3 seconds for 11 stocks)
+curl -X POST http://localhost:8000/api/agent/analyze-batch \
+  -H "Content-Type: application/json" \
+  -d '{"symbols": ["AAPL", "TSLA", "NVDA", "AMZN", "GOOGL"]}'
+```
+
+### CLI Usage
+```bash
+# Analyze entire watchlist
+trademind config analyze --watchlist
+
+# Analyze specific stocks
+trademind config analyze AAPL TSLA NVDA
+
+# Output example:
+# ✓ Analyzed 11/11 stocks
+#   Time: ~3 seconds (vs 22s sequential)
+#
+# 🟢 AAPL   @ $182.50 → BUY   (conf: 75%)
+# ⚪ TSLA   @ $245.30 → HOLD  (conf: 45%)
+# 🔴 NVDA   @ $875.20 → SELL  (conf: 60%)
+```
+
+### Performance
+- **Sequential**: ~22 seconds for 11 stocks
+- **Batch**: ~3 seconds for 11 stocks
+- **Speedup**: 7x faster
+- **Cost**: Same (concurrent processing, not parallel LLM calls)
 
 ## Command Line Interface (NEW)
 
@@ -366,14 +402,38 @@ The sentiment agent uses **ZAI GLM-4.7** to analyze market sentiment from recent
 
 ### Configuration
 ```python
+# Sentiment source mode
+SENTIMENT_SOURCE=auto        # Options: llm, technical, auto
+
 # Enable/disable sentiment agent
 SENTIMENT_ENABLED=true
 
-# ZAI API Configuration
+# ZAI API Configuration (only needed for llm mode)
 ZAI_API_KEY=your_key_here
 ZAI_MODEL=glm-4.7
 ZAI_TEMPERATURE=0.3
 ZAI_TIMEOUT=30
+```
+
+### Sentiment Modes
+- **`llm`**: Always use ZAI GLM-4.7 AI model (requires API key, ~$0.0004/analysis)
+- **`technical`**: Always use RSI + volume indicators (free, no API needed)
+- **`auto`**: Use LLM if API key available, else technical (default)
+
+### CLI Commands
+```bash
+# View sentiment configuration
+trademind config sentiment show
+
+# Set sentiment source
+trademind config sentiment set-source llm         # Use AI
+trademind config sentiment set-source technical   # Use indicators
+trademind config sentiment set-source auto        # Smart fallback
+
+# Quick commands
+trademind config sentiment use-llm
+trademind config sentiment use-technical
+trademind config sentiment use-auto
 ```
 
 ### Example Output

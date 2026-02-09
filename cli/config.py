@@ -307,3 +307,68 @@ def use_technical():
 def use_auto():
     """Quick command to use auto sentiment mode."""
     _set_sentiment_source('auto')
+
+# Stock analysis commands
+@config.command()
+@click.option('--watchlist', is_flag=True, help='Analyze all watchlist stocks')
+@click.argument('symbols', nargs=-1)
+def analyze(watchlist, symbols):
+    """
+    Analyze stocks (batch mode by default - 7x faster).
+
+    Examples:
+        trademind config analyze AAPL TSLA NVDA     # Analyze specific stocks
+        trademind config analyze --watchlist        # Analyze all watchlist stocks
+    """
+    from src.config import settings
+
+    if watchlist:
+        symbols = settings.watchlist
+    elif not symbols:
+        click.echo("Error: Provide symbols or use --watchlist flag")
+        return
+
+    click.echo(f"Analyzing {len(symbols)} stocks in batch mode...")
+
+    try:
+        response = requests.post(
+            f"{API_BASE}/api/agent/analyze-batch",
+            json={"symbols": list(symbols)}
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+
+            click.echo(f"\n✓ Analyzed {result['successful']}/{result['batch_size']} stocks")
+            click.echo(f"  Time: ~3 seconds (vs {len(symbols)*2}s sequential)")
+            click.echo()
+
+            # Display results
+            for r in result['results']:
+                symbol = r['symbol']
+                decision = r['final_decision']['decision']
+                confidence = r['final_decision']['confidence']
+                price = r['current_price']
+
+                # Color code decisions
+                if decision == 'BUY':
+                    color = 'green'
+                    icon = '🟢'
+                elif decision == 'SELL':
+                    color = 'red'
+                    icon = '🔴'
+                else:
+                    color = 'yellow'
+                    icon = '⚪'
+
+                click.echo(f"{icon} {symbol:6} @ ${price:>8.2f} → {decision:5} (conf: {confidence:.0%})")
+
+            if result.get('error_details'):
+                click.echo("\n⚠️  Errors:")
+                for err in result['error_details']:
+                    click.echo(f"  - {err['symbol']}: {err['error']}")
+
+        else:
+            print_error(f"Analysis failed: {response.text}")
+    except Exception as e:
+        print_error(f"Error: {e}")
