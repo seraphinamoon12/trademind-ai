@@ -171,8 +171,14 @@ class SignalExecutor:
                 actual_quantity = quantity
                 actual_signal = signal_type
 
-            side = OrderSide[actual_signal]
-            order_type_enum = OrderType[order_type.upper()]
+            if actual_signal not in ["BUY", "SELL"]:
+                return self._error_result(
+                    result,
+                    f"Invalid signal for OrderSide: {actual_signal}"
+                )
+
+            side = OrderSide[actual_signal]  # type: ignore[index]
+            order_type_enum = OrderType[order_type.upper()]  # type: ignore[index]
 
             order = Order(
                 order_id=f"SIGNAL_{int(datetime.now(timezone.utc).timestamp() * 1000)}",
@@ -269,9 +275,9 @@ class SignalExecutor:
                 })
             else:
                 processed_results.append(result)
-                if not result["success"]:
+                if isinstance(result, dict) and not result.get("success", True):
                     logger.warning(
-                        f"Signal execution failed: {result['message']}. "
+                        f"Signal execution failed: {result.get('message', 'Unknown error')}. "
                         f"Continuing with remaining signals."
                     )
 
@@ -343,6 +349,15 @@ class SignalExecutor:
             }
         
         # Execute trade
+        if action not in ["BUY", "SELL"]:
+            logger.error(f"Invalid action for execution: {action}")
+            return {
+                "executed_trade": None,
+                "order_id": None,
+                "error": f"Invalid action: {action}",
+                "current_node": "execute_trade"
+            }
+
         try:
             result = await self.execute_signal(
                 symbol=symbol,

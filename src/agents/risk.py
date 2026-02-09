@@ -7,7 +7,7 @@ from src.config import settings
 from src.filters.liquidity import liquidity_filter
 from src.filters.earnings import earnings_filter
 from src.risk.sector_monitor import sector_monitor
-from src.core.metrics import calculate_atr
+from src.risk.position_sizer import position_sizer
 
 
 class RiskAgent(BaseAgent):
@@ -87,7 +87,7 @@ class RiskAgent(BaseAgent):
             warnings.append(f"High portfolio exposure: {exposure_pct:.1%}")
         
         # Calculate position size recommendation (volatility-based)
-        atr = self._calculate_atr(data) if data is not None else None
+        atr = position_sizer.calculate_atr_from_data(data) if data is not None else None
         recommended_size = self._calculate_position_size(
             portfolio_value, atr, price=data['close'].iloc[-1] if data is not None else None
         )
@@ -135,31 +135,21 @@ class RiskAgent(BaseAgent):
             }
         )
     
-    def _calculate_atr(self, data: pd.DataFrame, period: int = 14) -> Optional[float]:
-        """Calculate Average True Range."""
-        if data is None or len(data) < period:
-            return None
-
-        return calculate_atr(data['high'], data['low'], data['close'], period)
-    
     def _calculate_position_size(
-        self, 
-        portfolio_value: float, 
+        self,
+        portfolio_value: float,
         atr: Optional[float],
         price: Optional[float]
     ) -> int:
-        """Calculate recommended position size based on risk."""
-        if atr is None or price is None or price <= 0:
-            # Default to 1% of portfolio
-            return int((portfolio_value * 0.01) / price) if price else 0
-        
-        # Risk 1% of portfolio per trade
-        risk_amount = portfolio_value * 0.01
-        # Position size = Risk Amount / (ATR * multiplier)
-        # Using 2x ATR as stop distance
-        stop_distance = atr * 2
-        shares = int(risk_amount / stop_distance) if stop_distance > 0 else 0
-        
-        # Cap at max position size
-        max_shares = int((portfolio_value * self.max_position_pct) / price)
-        return min(shares, max_shares)
+        """Calculate recommended position size using VolatilityPositionSizer."""
+        if price is None or price <= 0:
+            return 0
+
+        sizing_result = position_sizer.calculate_position_size(
+            portfolio_value=portfolio_value,
+            symbol='',  # Symbol not needed if ATR is provided
+            entry_price=price,
+            atr=atr
+        )
+
+        return sizing_result.get('shares', 0)

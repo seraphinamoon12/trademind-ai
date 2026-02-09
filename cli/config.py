@@ -64,6 +64,12 @@ def show():
             click.echo("\n🏭 SECTOR LIMITS:")
             click.echo(f"  Max Per Sector:       {cfg.get('max_sector_allocation_pct', 0)*100:.1f}%")
             
+            # Sentiment
+            click.echo("\n🎭 SENTIMENT ANALYSIS:")
+            click.echo(f"  Source:               {cfg.get('sentiment_source', 'auto')}")
+            click.echo(f"  Enabled:              {cfg.get('sentiment_enabled', True)}")
+            click.echo(f"  Cache TTL:            {cfg.get('sentiment_cache_ttl', 1800)}s")
+            
             click.echo("\n" + "=" * 50)
         else:
             print_error(f"Failed to get config: {response.status_code}")
@@ -209,3 +215,95 @@ def max_positions(count):
 def check_interval(minutes):
     """Set check interval in minutes."""
     set.callback('check_interval_minutes', str(minutes))
+
+# Sentiment configuration commands
+@config.group()
+def sentiment():
+    """Sentiment analysis configuration commands."""
+    pass
+
+def _set_sentiment_source(source):
+    """Internal function to set sentiment source."""
+    try:
+        response = requests.post(
+            f"{API_BASE}/api/config",
+            json={"key": "sentiment_source", "value": source}
+        )
+        if response.status_code == 200:
+            if source == 'llm':
+                print_success("✓ Sentiment source set to 'llm' (AI-powered analysis)")
+                click.echo("  Note: Requires ZAI_API_KEY to be configured")
+            elif source == 'technical':
+                print_success("✓ Sentiment source set to 'technical' (RSI + volume)")
+                click.echo("  Benefits: No API costs, faster, works offline")
+            else:
+                print_success("✓ Sentiment source set to 'auto' (smart fallback)")
+            return True
+        else:
+            print_error(f"Failed to set sentiment source: {response.text}")
+            return False
+    except Exception as e:
+        print_error(f"Error: {e}")
+        return False
+
+@sentiment.command()
+def show():
+    """Show current sentiment configuration."""
+    try:
+        response = requests.get(f"{API_BASE}/api/config")
+        if response.status_code == 200:
+            cfg = response.json()
+            click.echo("\n" + "=" * 50)
+            click.echo("🎭 SENTIMENT ANALYSIS CONFIGURATION")
+            click.echo("=" * 50)
+            
+            source = cfg.get('sentiment_source', 'auto')
+            click.echo(f"\n  Source:               {source}")
+            
+            if source == 'llm':
+                click.echo("  Mode:                 AI-powered (ZAI GLM-4.7)")
+                click.echo(f"  Model:                {cfg.get('zai_model', 'N/A')}")
+                click.echo(f"  Temperature:          {cfg.get('zai_temperature', 0.3)}")
+            elif source == 'technical':
+                click.echo("  Mode:                 Technical indicators")
+                click.echo(f"  Confidence Threshold: {cfg.get('sentiment_confidence_threshold', 0.7)}")
+            else:
+                click.echo("  Mode:                 Auto (LLM if available, else technical)")
+                has_key = bool(cfg.get('zai_api_key'))
+                click.echo(f"  API Key Available:    {has_key}")
+                click.echo(f"  Will Use:             {'LLM' if has_key else 'Technical'}")
+            
+            click.echo(f"  Cache TTL:            {cfg.get('sentiment_cache_ttl', 1800)} seconds")
+            click.echo(f"  Agent Weight:         {cfg.get('sentiment_weight', 0.30) * 100:.0f}%")
+            click.echo("\n" + "=" * 50)
+        else:
+            print_error(f"Failed to get config: {response.status_code}")
+    except Exception as e:
+        print_error(f"Error: {e}")
+
+@sentiment.command()
+@click.argument('source', type=click.Choice(['llm', 'technical', 'auto']))
+def set_source(source):
+    """Set sentiment analysis source.
+    
+    SOURCE options:
+      llm        - Use ZAI GLM-4.7 AI model (requires API key)
+      technical  - Use RSI, volume, momentum indicators
+      auto       - Use LLM if available, else technical (default)
+    """
+    _set_sentiment_source(source)
+
+@sentiment.command()
+def use_llm():
+    """Quick command to use LLM sentiment."""
+    _set_sentiment_source('llm')
+
+@sentiment.command()
+def use_technical():
+    """Quick command to use technical sentiment."""
+    _set_sentiment_source('technical')
+
+@sentiment.command()
+def use_auto():
+    """Quick command to use auto sentiment mode."""
+    _set_sentiment_source('auto')

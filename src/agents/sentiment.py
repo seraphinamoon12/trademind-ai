@@ -15,58 +15,9 @@ from src.agents.base import BaseAgent, AgentSignal, AgentDecision
 from src.config import settings
 from src.indicators.technical_utils import calculate_rsi
 from src.core.cache import generate_daily_symbol_key
+from src.core.resilience import CircuitBreaker
 
 logger = logging.getLogger(__name__)
-
-
-class CircuitBreaker:
-    """Circuit breaker pattern for API resilience."""
-
-    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60):
-        """
-        Initialize circuit breaker.
-
-        Args:
-            failure_threshold: Number of failures before opening circuit
-            recovery_timeout: Seconds to wait before attempting recovery
-        """
-        self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
-        self.failure_count = 0
-        self.last_failure_time = None
-        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
-
-    def can_execute(self) -> bool:
-        """
-        Check if operation should be allowed.
-
-        Returns:
-            True if operation should be allowed, False otherwise
-        """
-        if self.state == "CLOSED":
-            return True
-
-        if self.state == "OPEN":
-            if time.time() - self.last_failure_time > self.recovery_timeout:
-                self.state = "HALF_OPEN"
-                return True
-            return False
-
-        return True  # HALF_OPEN
-
-    def record_success(self):
-        """Record successful operation."""
-        self.failure_count = 0
-        self.state = "CLOSED"
-
-    def record_failure(self):
-        """Record failed operation."""
-        self.failure_count += 1
-        self.last_failure_time = time.time()
-
-        if self.failure_count >= self.failure_threshold:
-            self.state = "OPEN"
-            logger.warning(f"Circuit breaker OPENED after {self.failure_count} failures")
 
 
 class RateLimiter:
@@ -146,17 +97,23 @@ def async_retry(
 
 class SentimentAgent(BaseAgent):
     """
-    Sentiment analysis agent using ZAI GLM-4.7 model.
+    Sentiment analysis agent using ZAI GLM-4.7 model or technical indicators.
     
     Analyzes recent price action and market data to determine
     market sentiment (bullish, bearish, or neutral).
     
     Features:
-    - ZAI GLM-4.7 Flash model (cost optimized)
+    - Configurable source: LLM, technical, or auto (default)
+    - ZAI GLM-4.7 Flash model (cost optimized) when using LLM
+    - Technical indicators (RSI, volume, momentum) fallback
     - 30-minute result caching
     - Rate limiting (100 calls/60s default)
     - Batch processing for multiple symbols
-    - Fallback to RSI+volume when API unavailable
+    
+    Configuration:
+    - sentiment_source = "llm" - Force ZAI LLM analysis
+    - sentiment_source = "technical" - Force technical indicator analysis
+    - sentiment_source = "auto" - Use LLM if available, else technical (default)
     """
     
     name = "sentiment"
@@ -176,9 +133,9 @@ class SentimentAgent(BaseAgent):
         self.temperature = settings.zai_temperature
         self.timeout = settings.zai_timeout
         self._sentiment_cache = {}
-        self._cache_ttl = settings.sentiment_cache_ttl  # 30 minutes cache TTL
+        self._cache_ttl = settings.sentiment_cache_ttl
         self.rate_limiter = RateLimiter(max_calls=100, period=60)
-        self.circuit_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=300)
+        self.circuit_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=300, mode="api")
 
         if not self.api_key:
             logger.warning("ZAI_API_KEY not set - sentiment agent will use fallback logic")
@@ -208,7 +165,7 @@ class SentimentAgent(BaseAgent):
     
     async def analyze(self, symbol: str, data: pd.DataFrame, **context) -> AgentSignal:
         """
-        Analyze sentiment using ZAI GLM-4.7 model.
+        Analyze sentiment based on configured source.
 
         Args:
             symbol: Stock symbol to analyze
@@ -231,22 +188,33 @@ class SentimentAgent(BaseAgent):
                 logger.debug(f"Using cached sentiment for {symbol}")
                 return cached_result
             
-            # Prepare market data summary
-            market_summary = self._prepare_market_summary(data)
-            logger.debug(f"Market summary for {symbol}: {market_summary}")
+            # Determine which source to use
+            source = settings.sentiment_source.lower()
             
-            # If no API key, use fallback logic
-            if not self.api_key:
+            if source == "llm":
+                # Force LLM mode
+                if not self.api_key:
+                    logger.warning("LLM sentiment requested but no API key available")
+                    signal = self._fallback_analysis(symbol, data)
+                else:
+                    market_summary = self._prepare_market_summary(data)
+                    logger.debug(f"Market summary for {symbol}: {market_summary}")
+                    sentiment = await self._analyze_with_zai(symbol, market_summary)
+                    signal = self._sentiment_to_signal(symbol, sentiment, market_summary)
+                    
+            elif source == "technical":
+                # Force technical mode
                 signal = self._fallback_analysis(symbol, data)
-                self._cache_result(cache_key, signal)
-                logger.debug(f"Fallback sentiment for {symbol}: {signal.decision} (confidence: {signal.confidence:.2f})")
-                return signal
-            
-            # Call ZAI API for sentiment analysis
-            sentiment = await self._analyze_with_zai(symbol, market_summary)
-            
-            # Convert sentiment to trading signal
-            signal = self._sentiment_to_signal(symbol, sentiment, market_summary)
+                
+            else:  # "auto" or any other value
+                # Original behavior: LLM if available, else technical
+                if not self.api_key:
+                    signal = self._fallback_analysis(symbol, data)
+                else:
+                    market_summary = self._prepare_market_summary(data)
+                    logger.debug(f"Market summary for {symbol}: {market_summary}")
+                    sentiment = await self._analyze_with_zai(symbol, market_summary)
+                    signal = self._sentiment_to_signal(symbol, sentiment, market_summary)
             
             # Cache the result
             self._cache_result(cache_key, signal)
@@ -311,28 +279,30 @@ class SentimentAgent(BaseAgent):
         """Prepare market data summary for LLM analysis."""
         if data.empty:
             return {}
-        
+
         # Get last 5 days of data
         recent = data.tail(5)
-        
+
         latest = data.iloc[-1]
         prev = data.iloc[-2] if len(data) > 1 else latest
-        
-        # Calculate metrics
-        price_change = ((latest['close'] - prev['close']) / prev['close']) * 100
-        volume_avg = data['volume'].tail(20).mean()
-        volume_latest = latest['volume']
-        
+
+        # Calculate metrics with explicit type handling
+        latest_close = float(latest.get('close', 0))  # type: ignore[arg-type]
+        prev_close = float(prev.get('close', latest_close))  # type: ignore[arg-type]
+        price_change = ((latest_close - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
+        volume_avg = float(data['volume'].tail(20).mean())  # type: ignore[arg-type]
+        volume_latest = float(latest.get('volume', 0))  # type: ignore[arg-type]
+
         return {
-            'current_price': round(latest['close'], 2),
-            'previous_close': round(prev['close'], 2),
+            'current_price': round(latest_close, 2),
+            'previous_close': round(prev_close, 2),
             'price_change_pct': round(price_change, 2),
-            'volume': int(volume_latest),
-            'volume_avg_20d': int(volume_avg),
+            'volume': int(volume_latest) if volume_latest > 0 else 0,  # type: ignore[arg-type]
+            'volume_avg_20d': int(volume_avg) if volume_avg > 0 else 0,  # type: ignore[arg-type]
             'volume_ratio': round(volume_latest / volume_avg, 2) if volume_avg > 0 else 1.0,
-            'high_5d': round(recent['high'].max(), 2),
-            'low_5d': round(recent['low'].min(), 2),
-            'price_range_pct': round(((recent['high'].max() - recent['low'].min()) / recent['low'].min()) * 100, 2)
+            'high_5d': round(float(recent['high'].max()), 2),  # type: ignore[arg-type]
+            'low_5d': round(float(recent['low'].min()), 2),  # type: ignore[arg-type]
+            'price_range_pct': round(((float(recent['high'].max()) - float(recent['low'].min())) / float(recent['low'].min())) * 100, 2) if float(recent['low'].min()) > 0 else 0.0  # type: ignore[arg-type]
         }
     
     @async_retry(max_attempts=3, base_wait=1.0, max_wait=10.0)
@@ -532,7 +502,11 @@ Respond in JSON format:
         # RSI calculation (if enough data)
         rsi_value = None
         if len(data) >= 15:
-            rsi_value = calculate_rsi(data['close'], period=14)
+            close_prices = data['close']
+            if isinstance(close_prices, pd.Series):
+                rsi_value = calculate_rsi(close_prices, period=14)
+            else:
+                rsi_value = calculate_rsi(pd.Series(close_prices), period=14)
         
         # Calculate confidence from price momentum magnitude, capped at 0.8
         confidence = min(abs(price_change) / 5.0, 0.8)

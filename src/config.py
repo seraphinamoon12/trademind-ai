@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     sentiment_weight: float = 0.30
     risk_weight: float = 0.30
     sentiment_enabled: bool = True  # Enable sentiment analysis by default
+    sentiment_source: str = Field(default="auto")  # "llm", "technical", or "auto"
     
     # Trading thresholds
     confidence_threshold_high: float = Field(default=0.7)

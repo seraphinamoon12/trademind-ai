@@ -68,16 +68,22 @@ class TechnicalAgent(BaseAgent):
     def _calculate_rsi(data: pd.DataFrame, period: int = 14) -> Optional[float]:
         """Calculate RSI indicator."""
         try:
-            rsi_series = ta.rsi(data['close'], length=period)
+            close = data['close']
+            if not isinstance(close, pd.Series):
+                close = pd.Series(close)
+            rsi_series = ta.rsi(close, length=period)  # type: ignore[arg-type]
             return float(rsi_series.iloc[-1]) if not rsi_series.empty else None
         except Exception:
             return None
-    
+
     @staticmethod
     def _calculate_macd(data: pd.DataFrame) -> Optional[Dict[str, float]]:
         """Calculate MACD indicator."""
         try:
-            macd_result = ta.macd(data['close'], fast=12, slow=26, signal=9)
+            close = data['close']
+            if not isinstance(close, pd.Series):
+                close = pd.Series(close)
+            macd_result = ta.macd(close, fast=12, slow=26, signal=9)  # type: ignore[arg-type]
             if macd_result is None or macd_result.empty:
                 return None
             return {
@@ -87,37 +93,46 @@ class TechnicalAgent(BaseAgent):
             }
         except Exception:
             return None
-    
+
     @staticmethod
     def _calculate_sma(data: pd.DataFrame, period: int) -> Optional[float]:
         """Calculate SMA indicator."""
         try:
-            sma_series = ta.sma(data['close'], length=period)
+            close = data['close']
+            if not isinstance(close, pd.Series):
+                close = pd.Series(close)
+            sma_series = ta.sma(close, length=period)  # type: ignore[arg-type]
             return float(sma_series.iloc[-1]) if not sma_series.empty else None
         except Exception:
             return None
-    
+
     @staticmethod
     def _calculate_ema(data: pd.DataFrame, period: int) -> Optional[float]:
         """Calculate EMA indicator."""
         try:
-            ema_series = ta.ema(data['close'], length=period)
+            close = data['close']
+            if not isinstance(close, pd.Series):
+                close = pd.Series(close)
+            ema_series = ta.ema(close, length=period)  # type: ignore[arg-type]
             return float(ema_series.iloc[-1]) if not ema_series.empty else None
         except Exception:
             return None
-    
+
     @staticmethod
-    def _calculate_bollinger_bands(data: pd.DataFrame, period: int = 20) -> Optional[Dict[str, float]]:
+    def _calculate_bollinger_bands(data: pd.DataFrame, period: int = 20) -> Optional[Dict[str, Optional[float]]]:
         """Calculate Bollinger Bands indicator."""
         try:
-            bb_result = ta.bbands(data['close'], length=period, std=2)
+            close = data['close']
+            if not isinstance(close, pd.Series):
+                close = pd.Series(close)
+            bb_result = ta.bbands(close, length=period, std=2)  # type: ignore[arg-type]
             if bb_result is None or bb_result.empty:
                 return None
             cols = bb_result.columns.tolist()
             upper_col = [c for c in cols if 'BBU' in c][0] if any('BBU' in c for c in cols) else None
             lower_col = [c for c in cols if 'BBL' in c][0] if any('BBL' in c for c in cols) else None
             middle_col = [c for c in cols if 'BBM' in c][0] if any('BBM' in c for c in cols) else None
-            
+
             return {
                 'upper': float(bb_result.iloc[-1][upper_col]) if upper_col else None,
                 'middle': float(bb_result.iloc[-1][middle_col]) if middle_col else None,
@@ -125,12 +140,21 @@ class TechnicalAgent(BaseAgent):
             }
         except Exception:
             return None
-    
+
     @staticmethod
     def _calculate_atr(data: pd.DataFrame, period: int = 14) -> Optional[float]:
         """Calculate ATR indicator."""
         try:
-            atr_series = ta.atr(data['high'], data['low'], data['close'], length=period)
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            if not isinstance(high, pd.Series):
+                high = pd.Series(high)
+            if not isinstance(low, pd.Series):
+                low = pd.Series(low)
+            if not isinstance(close, pd.Series):
+                close = pd.Series(close)
+            atr_series = ta.atr(high, low, close, length=period)  # type: ignore[arg-type]
             return float(atr_series.iloc[-1]) if not atr_series.empty else None
         except Exception:
             return None

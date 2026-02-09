@@ -1,5 +1,5 @@
 """Volatility-based position sizing using ATR."""
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, cast
 import logging
 
 import yfinance as yf
@@ -147,28 +147,41 @@ class VolatilityPositionSizer:
             'method': 'fallback_fixed'
         }
     
-    def get_atr(self, symbol: str, period: int = None) -> Optional[float]:
+    def get_atr(self, symbol: str, period: Optional[int] = None) -> Optional[float]:
         """
         Calculate Average True Range for volatility measurement.
-        
+
         Args:
             symbol: Stock symbol
             period: ATR period (defaults to self.ATR_PERIOD)
-            
+
         Returns:
             float: ATR value or None if calculation fails
         """
         if period is None:
             period = self.ATR_PERIOD
-        
+
         try:
             hist = yf.Ticker(symbol).history(period=f"{period + 10}d")
 
-            if len(hist) < period:
+            if hist is None or len(hist) < period:
                 logger.warning(f"Insufficient data for {symbol} ATR calculation")
                 return None
 
-            return calculate_atr(hist['High'], hist['Low'], hist['Close'], period)
+            required_columns = ['High', 'Low', 'Close']
+            if not all(col in hist.columns for col in required_columns):
+                logger.warning(f"Missing required columns for {symbol} ATR calculation")
+                return None
+
+            high = hist['High']
+            low = hist['Low']
+            close = hist['Close']
+
+            if not isinstance(high, pd.Series) or not isinstance(low, pd.Series) or not isinstance(close, pd.Series):
+                logger.warning(f"Unexpected data types for {symbol} ATR calculation")
+                return None
+
+            return calculate_atr(high, low, close, period)  # type: ignore[arg-type]
 
         except Exception as e:
             logger.warning(f"Error calculating ATR for {symbol}: {e}")
@@ -177,7 +190,7 @@ class VolatilityPositionSizer:
     def calculate_atr_from_data(
         self,
         data: pd.DataFrame,
-        period: int = None
+        period: Optional[int] = None
     ) -> Optional[float]:
         """
         Calculate ATR from provided OHLCV data.
@@ -195,8 +208,21 @@ class VolatilityPositionSizer:
         if data is None or len(data) < period:
             return None
 
+        required_columns = ['high', 'low', 'close']
+        if not all(col in data.columns for col in required_columns):
+            logger.warning(f"Missing required columns for ATR calculation from data")
+            return None
+
+        high = data['high']
+        low = data['low']
+        close = data['close']
+
+        if not isinstance(high, pd.Series) or not isinstance(low, pd.Series) or not isinstance(close, pd.Series):
+            logger.warning(f"Unexpected data types for ATR calculation from data")
+            return None
+
         try:
-            return calculate_atr(data['high'], data['low'], data['close'], period)
+            return calculate_atr(high, low, close, period)  # type: ignore[arg-type]
         except Exception as e:
             logger.warning(f"Error calculating ATR from data: {e}")
             return None

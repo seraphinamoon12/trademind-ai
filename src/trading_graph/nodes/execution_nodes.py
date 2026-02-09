@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from functools import wraps
-from typing import Any, Dict, Callable
+from typing import Any, Dict, Callable, cast
 
 from src.trading_graph.state import TradingState
 from src.trading_graph.types import RiskAssessmentOutput, ExecuteTradeOutput, RetryOutput
@@ -160,7 +160,7 @@ async def execute_trade(state: TradingState) -> ExecuteTradeOutput:
 
         if final_action not in ["BUY", "SELL"]:
             return {
-                "executed_trade": None,
+                "executed_trade": {},
                 "order_id": None,
                 "execution_status": "REJECTED",
                 "error": f"Invalid action: {final_action}",
@@ -170,7 +170,7 @@ async def execute_trade(state: TradingState) -> ExecuteTradeOutput:
 
         if not state.get("human_approved", False):
             return {
-                "executed_trade": None,
+                "executed_trade": {},
                 "order_id": None,
                 "execution_status": "REJECTED",
                 "error": "Not approved by human",
@@ -183,7 +183,7 @@ async def execute_trade(state: TradingState) -> ExecuteTradeOutput:
 
         if position_size <= 0:
             return {
-                "executed_trade": None,
+                "executed_trade": {},
                 "order_id": None,
                 "execution_status": "REJECTED",
                 "error": "Invalid position size",
@@ -218,7 +218,7 @@ async def execute_trade(state: TradingState) -> ExecuteTradeOutput:
             result["execution_status"] = "SUCCESS" if result.get("order_id") else "FAILED"
             result["current_node"] = "execute_trade"
 
-            return result
+            return cast(ExecuteTradeOutput, result)
         else:
             executed_trade = {
                 "action": final_action,
@@ -243,7 +243,7 @@ async def execute_trade(state: TradingState) -> ExecuteTradeOutput:
     except Exception as e:
         logger.error(f"Trade execution failed: {e}")
         return {
-            "executed_trade": None,
+            "executed_trade": {},
             "order_id": None,
             "execution_status": "FAILED",
             "error": str(e),
@@ -253,7 +253,7 @@ async def execute_trade(state: TradingState) -> ExecuteTradeOutput:
 
 
 @async_retry_with_fallback(max_attempts=3, fallback_value={
-    "executed_trade": None,
+    "executed_trade": {},
     "order_id": None,
     "execution_status": "FAILED",
     "error": "Max retries exceeded",
@@ -302,11 +302,13 @@ async def retry_node(state: TradingState) -> RetryOutput:
             "iteration": new_iteration,
             "current_node": "retry_node"
         }
-        
-        return result
+
+        return cast(RetryOutput, result)
         
     except Exception as e:
         return {
             "error": f"Retry node failed: {str(e)}",
+            "retry_count": state.get("retry_count", 0),
+            "iteration": state.get("iteration", 0),
             "current_node": "retry_node"
         }

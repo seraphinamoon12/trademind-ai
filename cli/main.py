@@ -86,6 +86,13 @@ def examples():
 [bold cyan]Config Commands[/bold cyan]
   trademind config show            # Show all configuration
   trademind config get trading.max_position_pct   # Get specific value
+
+[bold cyan]Sentiment Configuration[/bold cyan]
+  trademind config sentiment show              # View sentiment settings
+  trademind config sentiment set-source llm    # Use AI sentiment
+  trademind config sentiment set-source technical  # Use technical
+  trademind config sentiment use-llm           # Quick: use LLM
+  trademind config sentiment use-technical     # Quick: use technical
     """
     
     try:
@@ -116,6 +123,12 @@ def examples():
         print("\nConfig Commands")
         print("  trademind config show")
         print("  trademind config get <key>")
+        print("\nSentiment Configuration")
+        print("  trademind config sentiment show")
+        print("  trademind config sentiment set-source llm")
+        print("  trademind config sentiment set-source technical")
+        print("  trademind config sentiment use-llm")
+        print("  trademind config sentiment use-technical")
 
 
 if __name__ == "__main__":
