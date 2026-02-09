@@ -1,5 +1,5 @@
 """Circuit Breaker - Global trading halt mechanism."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from pathlib import Path
 import logging
@@ -113,7 +113,7 @@ class CircuitBreaker:
         """Trigger circuit breaker and halt all trading."""
         self.is_halted = True
         self.halt_reason = reason
-        self.halt_time = datetime.utcnow()
+        self.halt_time = datetime.now(timezone.utc)
         
         logger.critical(f"🚨 CIRCUIT BREAKER TRIGGERED: {reason}")
         logger.info("Trading halted - positions remain open for manual review")
@@ -136,7 +136,7 @@ class CircuitBreaker:
         
         logger.info(f"🟢 Circuit breaker reset by {reset_by}")
         logger.info(f"   Previous halt reason: {self.halt_reason}")
-        logger.info(f"   Halted for: {(datetime.utcnow() - self.halt_time).total_seconds() / 60:.1f} minutes")
+        logger.info(f"   Halted for: {(datetime.now(timezone.utc) - self.halt_time).total_seconds() / 60:.1f} minutes")
         
         self.is_halted = False
         self.halt_reason = None

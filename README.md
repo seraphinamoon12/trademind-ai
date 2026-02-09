@@ -14,6 +14,7 @@ An AI-powered autonomous trading system with rule-based strategies (RSI Mean Rev
 - **Redis Event Bus**: Pub/sub for agent communication
 - **Risk Management**: Position sizing, stop losses, drawdown limits
 - **Command Line Interface**: Full CLI for server management, backtesting, and monitoring
+- **LangGraph Orchestration**: Advanced multi-agent workflow with debate protocol and human-in-the-loop
 
 ## Architecture
 
@@ -34,6 +35,95 @@ An AI-powered autonomous trading system with rule-based strategies (RSI Mean Rev
 │ Manager      │  │   Engine     │  │   + HTMX     │  │  Interface   │
 └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
 ```
+
+## LangGraph Integration (NEW)
+
+TradeMind AI now uses LangGraph for advanced multi-agent orchestration.
+
+### Architecture
+
+```
+┌─────────┐    ┌──────────────┐    ┌──────────────────┐
+│  START  │───▶│  Fetch Data  │───▶│ Technical Analysis│
+└─────────┘    └──────────────┘    └────────┬─────────┘
+                                             │
+                    ┌───────────────────────┘
+                    ▼
+          ┌──────────────────────┐
+          │ Sentiment Analysis   │
+          └────────┬─────────────┘
+                   │
+                   ▼
+          ┌──────────────────────┐
+          │  Debate Protocol    │ (if signals conflict)
+          └────────┬─────────────┘
+                   │
+                   ▼
+          ┌──────────────────────┐
+          │  Risk Assessment    │
+          └────────┬─────────────┘
+                   │
+                   ▼
+          ┌──────────────────────┐
+          │   Decision Node     │
+          └────────┬─────────────┘
+                   │
+        ┌──────────┴──────────┐
+        ▼                      ▼
+┌───────────────┐      ┌───────────────┐
+│ Human Review  │      │ Auto-Approve  │
+│ (low conf)    │      │ (high conf)   │
+└───────┬───────┘      └───────┬───────┘
+        │                      │
+        └──────────┬───────────┘
+                   ▼
+          ┌──────────────────────┐
+          │  Execute Trade      │
+          └────────┬─────────────┘
+                   │
+                   ▼
+            ┌────────────┐
+            │    END     │
+            └────────────┘
+```
+
+### Features
+
+- **Multi-Agent Debate**: Bull vs Bear agents debate when signals conflict
+- **Human-in-the-Loop**: Automatic interrupts for low-confidence trades
+- **Persistence**: Resume workflows from any point
+- **Streaming**: Real-time progress updates
+- **Observability**: Full LangSmith integration
+
+### Configuration
+
+```bash
+# Enable LangSmith tracing
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=your-key
+export LANGSMITH_PROJECT=trademind-ai
+```
+
+### Usage
+
+```python
+from src.trading_graph.graph import create_trading_graph
+
+graph = await create_trading_graph()
+
+result = await graph.ainvoke({
+    "symbol": "AAPL",
+    "timeframe": "1d"
+}, {"thread_id": "workflow-001"})
+```
+
+### LangGraph API Endpoints
+
+- `POST /api/langgraph/analyze` - Run full workflow
+- `POST /api/langgraph/approve` - Approve interrupted workflow
+- `WS /ws/trades/{symbol}` - Real-time trade notifications
+
+See `docs/LANGGRAPH_MIGRATION_GUIDE.md` for complete documentation.
 
 ## Quick Start
 

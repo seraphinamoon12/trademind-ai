@@ -1,9 +1,12 @@
 """Risk management for IBKR trading."""
 import logging
 from typing import Dict, Any, Tuple, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
+import numpy as np
 
 from src.brokers.base import Order, OrderSide
+from src.trading_graph.state import TradingState
+from src.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -12,10 +15,23 @@ class IBKRRiskManager:
     """Risk management for IBKR trading."""
 
     def __init__(self, broker, config: Optional[Dict[str, Any]] = None):
+        """
+        Initialize IBKRRiskManager with broker connection and risk limits.
+
+        Args:
+            broker: IBKR broker connection
+            config: Optional configuration dictionary with risk parameters
+                - max_order_size: Maximum order size in shares
+                - max_order_value: Maximum order value in dollars
+                - max_position_pct: Maximum position as % of portfolio
+                - max_sector_pct: Maximum sector exposure as %
+                - daily_loss_limit: Maximum daily loss limit
+                - max_open_orders: Maximum concurrent open orders
+        """
         self.broker = broker
         self.config = config or {}
         self._daily_trades = []
-        self._last_reset_date = datetime.utcnow().date()
+        self._last_reset_date = datetime.now(timezone.utc).date()
 
         self.max_order_size = self.config.get('max_order_size', 1000)
         self.max_order_value = self.config.get('max_order_value', 50000)
@@ -209,5 +225,248 @@ class IBKRRiskManager:
     def reset_daily_counters(self) -> None:
         """Reset daily tracking counters (call at start of trading day)."""
         self._daily_trades = []
-        self._last_reset_date = datetime.utcnow().date()
+        self._last_reset_date = datetime.now(timezone.utc).date()
         logger.info("Daily risk counters reset")
+    
+    async def validate_trade(self, state: TradingState) -> Tuple[bool, str]:
+        """
+        Validate trade using state information.
+
+        Args:
+            state: Trading state with decision and action
+
+        Returns:
+            Tuple of (is_valid, message)
+        """
+        # Safely get values with defaults
+        decision = state.get("final_decision") or {}
+        symbol = state.get("symbol", "")
+        action = state.get("final_action", "HOLD")
+
+        # Handle None/empty decision
+        if not decision:
+            decision = {
+                "position_size": 0,
+                "max_loss": 0,
+                "risk_score": 0
+            }
+
+        if action == "HOLD":
+            return True, "No trade to validate"
+
+        # Check position size
+        is_valid, msg = await self._check_position_size(decision)
+        if not is_valid:
+            return False, msg
+        
+        # Check portfolio exposure
+        is_valid, msg = await self._check_exposure(symbol, decision)
+        if not is_valid:
+            return False, msg
+        
+        # Check daily loss limit
+        is_valid, msg = await self._check_daily_loss(decision)
+        if not is_valid:
+            return False, msg
+        
+        return True, "Trade validated"
+    
+    async def _check_position_size(self, decision: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Check if position size is within limits.
+        
+        Args:
+            decision: Decision dictionary with position_size
+            
+        Returns:
+            Tuple of (is_valid, message)
+        """
+        position_size = decision.get("position_size", 0)
+        max_position = self.config.get("max_position_pct", 0.10)
+        
+        if position_size > max_position:
+            return False, f"Position size {position_size:.1%} exceeds max {max_position:.1%}"
+        
+        return True, "OK"
+    
+    async def _check_exposure(self, symbol: str, decision: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Check portfolio exposure for the symbol.
+        
+        Args:
+            symbol: Stock symbol
+            decision: Decision dictionary
+            
+        Returns:
+            Tuple of (is_valid, message)
+        """
+        try:
+            account = await self.broker.get_account()
+            positions = await self.broker.get_positions()
+            
+            # Check sector exposure
+            sector_limit = self.config.get("max_sector_pct", 0.25)
+            
+            # Calculate current exposure
+            current_exposure = sum(
+                abs(pos.market_value) for pos in positions
+            )
+            
+            if account.portfolio_value > 0:
+                exposure_pct = current_exposure / account.portfolio_value
+                
+                if exposure_pct > 0.75:
+                    return False, f"Portfolio exposure {exposure_pct:.1%} exceeds 75% limit"
+            
+            return True, "OK"
+        except Exception as e:
+            logger.error(f"Exposure check error: {e}")
+            return False, f"Exposure check failed: {str(e)}"
+    
+    async def _check_daily_loss(self, decision: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Check if daily loss limit would be exceeded.
+        
+        Args:
+            decision: Decision dictionary
+            
+        Returns:
+            Tuple of (is_valid, message)
+        """
+        try:
+            account = await self.broker.get_account()
+            daily_pnl = account.daily_pnl
+            loss_limit = self.config.get("daily_loss_limit", 1000)
+            
+            if daily_pnl < -loss_limit:
+                return False, f"Daily loss ${abs(daily_pnl):.2f} exceeds limit ${loss_limit:.2f}"
+            
+            return True, "OK"
+        except Exception as e:
+            logger.error(f"Daily loss check error: {e}")
+            return False, f"Daily loss check failed: {str(e)}"
+    
+    async def calculate_var(
+        self,
+        returns: List[float],
+        confidence: Optional[float] = None
+    ) -> float:
+        """
+        Calculate Value at Risk (VaR).
+
+        Args:
+            returns: List of historical returns
+            confidence: Confidence level (0-1). Defaults to settings.var_confidence.
+
+        Returns:
+            VaR value (positive number representing potential loss)
+        """
+        if not returns or len(returns) < 2:
+            return 0.0
+
+        if confidence is None:
+            confidence = settings.var_confidence
+
+        try:
+            returns_array = np.array(returns)
+            var = np.percentile(returns_array, (1 - confidence) * 100)
+
+            return abs(float(var))
+        except Exception as e:
+            logger.error(f"VaR calculation error: {e}")
+            return 0.0
+    
+    async def get_position_var(
+        self,
+        symbol: str,
+        quantity: int,
+        confidence: Optional[float] = None,
+        lookback_days: int = 30
+    ) -> Dict[str, Any]:
+        """
+        Calculate VaR for a specific position.
+
+        Args:
+            symbol: Stock symbol
+            quantity: Number of shares
+            confidence: Confidence level (0-1). Defaults to settings.var_confidence.
+            lookback_days: Number of days of historical data
+
+        Returns:
+            Dictionary with VaR metrics
+        """
+        if confidence is None:
+            confidence = settings.var_confidence
+        try:
+            from src.data.providers import yahoo_provider
+
+            period_map = {
+                30: "3mo",
+                60: "6mo",
+                90: "1y"
+            }
+            period = period_map.get(lookback_days, "3mo")
+
+            data = yahoo_provider.get_historical(symbol, period=period)
+            if data is None or len(data) < 30:
+                logger.warning(f"Insufficient data for VaR: {symbol}")
+                return {
+                    "symbol": symbol,
+                    "var_95": 0.0,
+                    "var_99": 0.0,
+                    "confidence": confidence,
+                    "lookback_days": lookback_days
+                }
+
+            if 'close' not in data.columns:
+                logger.error(f"No 'close' column in data for {symbol}")
+                return {
+                    "symbol": symbol,
+                    "var_95": 0.0,
+                    "var_99": 0.0,
+                    "confidence": confidence,
+                    "lookback_days": lookback_days
+                }
+
+            returns = data['close'].pct_change().dropna()
+
+            if len(returns) < 30:
+                logger.warning(f"Insufficient return data for VaR: {symbol} ({len(returns)} returns)")
+                return {
+                    "symbol": symbol,
+                    "var_95": 0.0,
+                    "var_99": 0.0,
+                    "confidence": confidence,
+                    "lookback_days": lookback_days
+                }
+
+            current_price = float(data['close'].iloc[-1])
+            position_value = quantity * current_price
+
+            var_95_percentile = (1 - 0.95) * 100
+            var_95_return = np.percentile(returns, var_95_percentile)
+            var_95 = position_value * abs(var_95_return)
+
+            var_99_percentile = (1 - 0.99) * 100
+            var_99_return = np.percentile(returns, var_99_percentile)
+            var_99 = position_value * abs(var_99_return)
+
+            return {
+                "symbol": symbol,
+                "var_95": float(var_95),
+                "var_99": float(var_99),
+                "confidence": confidence,
+                "lookback_days": lookback_days,
+                "position_value": position_value,
+                "current_price": current_price
+            }
+        except Exception as e:
+            logger.error(f"Position VaR calculation error for {symbol}: {e}")
+            return {
+                "symbol": symbol,
+                "error": str(e),
+                "var_95": 0.0,
+                "var_99": 0.0,
+                "confidence": confidence,
+                "lookback_days": lookback_days
+            }

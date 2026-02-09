@@ -81,9 +81,27 @@ class Settings(BaseSettings):
     risk_weight: float = 0.30
     sentiment_enabled: bool = True  # Enable sentiment analysis by default
     
+    # Trading thresholds
+    confidence_threshold_high: float = Field(default=0.7)
+    confidence_threshold_low: float = Field(default=0.3)
+    sentiment_cache_ttl: int = Field(default=1800)  # 30 minutes
+
+    # Technical Analysis Thresholds
+    rsi_oversold_threshold: int = Field(default=30)
+    rsi_overbought_threshold: int = Field(default=70)
+    macd_signal_threshold: float = Field(default=0.0)
+    ma_crossover_threshold: float = Field(default=0.01)  # 1%
+
+    # Sentiment Thresholds
+    sentiment_confidence_threshold: float = Field(default=0.7)
+
+    # Risk Thresholds
+    var_confidence: float = Field(default=0.95)  # 95%
+    daily_loss_limit_pct: float = Field(default=0.02)  # 2%
+    
     # ZAI (for sentiment agent)
     zai_api_key: Optional[str] = Field(default=None)
-    zai_model: str = "glm-4.7"
+    zai_model: str = "glm-4.7-flash"
     zai_temperature: float = 0.3
     zai_timeout: int = 30
     
@@ -105,6 +123,34 @@ class Settings(BaseSettings):
     
     # OpenAI (for sentiment agent)
     openai_api_key: Optional[str] = Field(default=None)
+
+    # Human Review
+    human_review_threshold: float = Field(default=0.75)  # Confidence threshold for auto-approve
+    human_review_timeout: int = Field(default=300)  # Timeout in seconds (5 minutes)
+
+    # LangSmith Observability
+    langsmith_api_key: Optional[str] = Field(default=None)
+    langsmith_project: str = Field(default="trademind-ai")
+    langsmith_endpoint: Optional[str] = Field(default=None)
+    enable_langsmith: bool = Field(default=False)
+
+    # Debate thresholds
+    debate_confidence_threshold: float = Field(default=0.7)
+    debate_trigger_threshold: float = Field(default=0.2)
+    min_debate_confidence: float = Field(default=0.5)
+
+    # Human review
+    human_review_timeout_seconds: int = Field(default=300)
+    human_review_low_confidence_threshold: float = Field(default=0.6)
+    websocket_auth_token: Optional[str] = Field(default=None)
+
+    # Streaming
+    streaming_update_interval_seconds: float = Field(default=0.1)
+    max_streaming_clients: int = Field(default=100)
+
+    # Debate trigger mode
+    debate_trigger_mode: str = Field(default="signal_conflict")
+    debate_min_signal_difference: float = Field(default=0.2)
 
     # IBKR Configuration
     ibkr_enabled: bool = Field(default=False)

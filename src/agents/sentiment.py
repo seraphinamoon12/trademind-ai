@@ -1,5 +1,5 @@
 """Sentiment Analysis Agent using ZAI GLM-4.7."""
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, List
 import pandas as pd
 import os
 import httpx
@@ -9,44 +9,137 @@ import re
 import asyncio
 import time
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.agents.base import BaseAgent, AgentSignal, AgentDecision
 from src.config import settings
+from src.indicators.technical_utils import calculate_rsi
+from src.indicators.technical_utils import calculate_rsi
 
 logger = logging.getLogger(__name__)
 
 
-def async_retry(max_attempts: int = 3, base_wait: float = 1.0, max_wait: float = 10.0):
-    """
-    Decorator for async retry with exponential backoff.
+class CircuitBreaker:
+    """Circuit breaker pattern for API resilience."""
+
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60):
+        """
+        Initialize circuit breaker.
+
+        Args:
+            failure_threshold: Number of failures before opening circuit
+            recovery_timeout: Seconds to wait before attempting recovery
+        """
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+
+    def can_execute(self) -> bool:
+        """
+        Check if operation should be allowed.
+
+        Returns:
+            True if operation should be allowed, False otherwise
+        """
+        if self.state == "CLOSED":
+            return True
+
+        if self.state == "OPEN":
+            if time.time() - self.last_failure_time > self.recovery_timeout:
+                self.state = "HALF_OPEN"
+                return True
+            return False
+
+        return True  # HALF_OPEN
+
+    def record_success(self):
+        """Record successful operation."""
+        self.failure_count = 0
+        self.state = "CLOSED"
+
+    def record_failure(self):
+        """Record failed operation."""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+
+        if self.failure_count >= self.failure_threshold:
+            self.state = "OPEN"
+            logger.warning(f"Circuit breaker OPENED after {self.failure_count} failures")
+
+
+class RateLimiter:
+    """Rate limiter for API calls."""
     
+    def __init__(self, max_calls: int = 100, period: int = 60):
+        """
+        Initialize rate limiter.
+        
+        Args:
+            max_calls: Maximum number of calls allowed
+            period: Time period in seconds
+        """
+        self.max_calls = max_calls
+        self.period = period
+        self.calls = []
+        self._lock = asyncio.Lock()
+    
+    async def acquire(self):
+        """Acquire permission to make an API call."""
+        async with self._lock:
+            now = time.time()
+            self.calls = [c for c in self.calls if now - c < self.period]
+            
+            if len(self.calls) >= self.max_calls:
+                sleep_time = self.period - (now - self.calls[0])
+                if sleep_time > 0:
+                    logger.debug(f"Rate limit reached, sleeping for {sleep_time:.2f}s")
+                    await asyncio.sleep(sleep_time)
+            
+            self.calls.append(now)
+
+
+def async_retry(
+    max_attempts: int = 3,
+    base_wait: float = 1.0,
+    max_wait: float = 60.0,
+    exponential_base: float = 2.0
+):
+    """
+    Async retry with exponential backoff.
+
+    Wait times: base_wait, base_wait * 2, base_wait * 4, ...
+    Capped at max_wait.
+
     Args:
         max_attempts: Maximum number of retry attempts
         base_wait: Initial wait time in seconds
         max_wait: Maximum wait time in seconds
+        exponential_base: Multiplier for exponential backoff (default 2.0)
     """
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            last_exception = Exception("Unknown error")
             for attempt in range(max_attempts):
                 try:
                     return await func(*args, **kwargs)
                 except Exception as e:
-                    last_exception = e
-                    if attempt < max_attempts - 1:
-                        wait_time = min(base_wait * (2 ** attempt), max_wait)
-                        logger.warning(
-                            f"Attempt {attempt + 1}/{max_attempts} failed for {func.__name__}: {e}. "
-                            f"Retrying in {wait_time}s..."
-                        )
-                        await asyncio.sleep(wait_time)
-                    else:
-                        logger.error(
-                            f"All {max_attempts} attempts failed for {func.__name__}: {e}"
-                        )
-            raise last_exception
+                    if attempt == max_attempts - 1:
+                        raise
+
+                    wait_time = min(
+                        base_wait * (exponential_base ** attempt),
+                        max_wait
+                    )
+
+                    logger.warning(
+                        f"Attempt {attempt + 1}/{max_attempts} failed for {func.__name__}: {e}. "
+                        f"Retrying in {wait_time:.1f}s..."
+                    )
+                    await asyncio.sleep(wait_time)
+
+            raise Exception("Should not reach here")
         return wrapper
     return decorator
 
@@ -57,12 +150,25 @@ class SentimentAgent(BaseAgent):
     
     Analyzes recent price action and market data to determine
     market sentiment (bullish, bearish, or neutral).
+    
+    Features:
+    - ZAI GLM-4.7 Flash model (cost optimized)
+    - 30-minute result caching
+    - Rate limiting (100 calls/60s default)
+    - Batch processing for multiple symbols
+    - Fallback to RSI+volume when API unavailable
     """
     
     name = "sentiment"
     weight = 0.30  # 30% weight in orchestrator
     
     def __init__(self, **kwargs):
+        """
+        Initialize SentimentAgent with ZAI API configuration.
+
+        Args:
+            **kwargs: Additional keyword arguments passed to BaseAgent
+        """
         super().__init__(**kwargs)
         self.api_key = settings.zai_api_key or os.getenv('ZAI_API_KEY')
         self.base_url = "https://api.z.ai/api/paas/v4"
@@ -70,14 +176,16 @@ class SentimentAgent(BaseAgent):
         self.temperature = settings.zai_temperature
         self.timeout = settings.zai_timeout
         self._sentiment_cache = {}
-        self._cache_ttl = 1800  # 30 minutes cache TTL
-        
+        self._cache_ttl = settings.sentiment_cache_ttl  # 30 minutes cache TTL
+        self.rate_limiter = RateLimiter(max_calls=100, period=60)
+        self.circuit_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=300)
+
         if not self.api_key:
             logger.warning("ZAI_API_KEY not set - sentiment agent will use fallback logic")
     
     def _get_cache_key(self, symbol: str) -> str:
         """Generate cache key based on symbol + date (not time)."""
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         return f"{symbol}:{today}"
     
     def _get_cached_result(self, cache_key: str) -> Optional[AgentSignal]:
@@ -106,14 +214,18 @@ class SentimentAgent(BaseAgent):
     async def analyze(self, symbol: str, data: pd.DataFrame, **context) -> AgentSignal:
         """
         Analyze sentiment using ZAI GLM-4.7 model.
-        
+
         Args:
-            symbol: Stock symbol
-            data: OHLCV DataFrame
-            context: Additional context
-            
+            symbol: Stock symbol to analyze
+            data: OHLCV DataFrame with historical data
+            **context: Additional context parameters
+
         Returns:
-            AgentSignal with sentiment-based decision
+            AgentSignal with:
+                - decision: AgentDecision (BUY, SELL, or HOLD)
+                - confidence: Float between 0 and 1
+                - reasoning: String explanation of the sentiment analysis
+                - data: Dict containing sentiment label and market_summary
         """
         try:
             # Check cache first
@@ -145,8 +257,15 @@ class SentimentAgent(BaseAgent):
             
             logger.debug(f"Final sentiment for {symbol}: {signal.decision} (confidence: {signal.confidence:.2f})")
             return signal
-            
+
         except Exception as e:
+            # If circuit breaker is open, use fallback analysis
+            if "Circuit breaker OPEN" in str(e):
+                logger.warning(f"Circuit breaker triggered for {symbol}, using fallback analysis")
+                signal = self._fallback_analysis(symbol, data)
+                self._cache_result(cache_key, signal)
+                return signal
+
             logger.error(f"Error in sentiment analysis for {symbol}: {e}")
             return AgentSignal(
                 agent_name=self.name,
@@ -155,6 +274,42 @@ class SentimentAgent(BaseAgent):
                 confidence=0.0,
                 reasoning=f"Sentiment analysis error: {str(e)}"
             )
+    
+    async def analyze_batch(self, symbols_data: Dict[str, pd.DataFrame]) -> Dict[str, AgentSignal]:
+        """
+        Analyze sentiment for multiple symbols concurrently.
+
+        Args:
+            symbols_data: Dictionary mapping symbols to their OHLCV DataFrames
+
+        Returns:
+            Dictionary mapping symbols to AgentSignals
+        """
+        # Create tasks for all symbols
+        tasks = [
+            self.analyze(symbol, data)
+            for symbol, data in symbols_data.items()
+        ]
+
+        # Run all concurrently
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Handle any exceptions
+        processed_results = {}
+        for (symbol, _), result in zip(symbols_data.items(), results):
+            if isinstance(result, Exception):
+                logger.error(f"Sentiment analysis failed for {symbol}: {result}")
+                processed_results[symbol] = AgentSignal(
+                    agent_name=self.name,
+                    symbol=symbol,
+                    decision=AgentDecision.HOLD,
+                    confidence=0.0,
+                    reasoning=f"Sentiment analysis error: {str(result)}"
+                )
+            else:
+                processed_results[symbol] = result
+
+        return processed_results
     
     def _prepare_market_summary(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Prepare market data summary for LLM analysis."""
@@ -187,6 +342,14 @@ class SentimentAgent(BaseAgent):
     @async_retry(max_attempts=3, base_wait=1.0, max_wait=10.0)
     async def _analyze_with_zai(self, symbol: str, market_summary: Dict) -> Dict[str, Any]:
         """Call ZAI GLM-4.7 API for sentiment analysis."""
+
+        # Check circuit breaker
+        if not self.circuit_breaker.can_execute():
+            logger.warning("Circuit breaker OPEN - raising exception to trigger fallback")
+            raise Exception("Circuit breaker OPEN - API unavailable")
+
+        # Acquire rate limit token
+        await self.rate_limiter.acquire()
         
         prompt = f"""Analyze the market sentiment for {symbol} based on the following recent data:
 
@@ -270,14 +433,18 @@ Respond in JSON format:
                     # Fallback parsing
                     sentiment_data = self._parse_sentiment_text(content)
                 
+                self.circuit_breaker.record_success()
                 return sentiment_data
-                
+
             except json.JSONDecodeError:
                 # Fallback to text parsing
-                return self._parse_sentiment_text(content)
-                
+                sentiment_data = self._parse_sentiment_text(content)
+                self.circuit_breaker.record_success()
+                return sentiment_data
+
         except Exception as e:
             logger.error(f"ZAI API error: {e}")
+            self.circuit_breaker.record_failure()
             raise
     
     def _parse_sentiment_text(self, text: str) -> Dict[str, Any]:
@@ -294,7 +461,7 @@ Respond in JSON format:
         
         # Extract confidence (look for a number between 0 and 1)
         confidence_match = re.search(r'(\d+\.?\d*)', text)
-        confidence = float(confidence_match.group(1)) if confidence_match else 0.5
+        confidence = float(confidence_match.group(1)) if confidence_match else settings.sentiment_confidence_threshold
         if confidence > 1:
             confidence = confidence / 100  # Handle percentage format
         
@@ -313,7 +480,7 @@ Respond in JSON format:
         """Convert sentiment analysis to trading signal."""
         
         sentiment_label = sentiment.get('sentiment', 'neutral').lower()
-        confidence = float(sentiment.get('confidence', 0.5))
+        confidence = float(sentiment.get('confidence', settings.sentiment_confidence_threshold))
         reasoning = sentiment.get('reasoning', 'No reasoning provided')
         
         # Validate confidence is within 0-1 range
@@ -369,7 +536,7 @@ Respond in JSON format:
         # RSI calculation (if enough data)
         rsi_value = None
         if len(data) >= 15:
-            rsi_value = self._calculate_rsi(data['close'], period=14)
+            rsi_value = calculate_rsi(data['close'], period=14)
         
         # Calculate confidence from price momentum magnitude, capped at 0.8
         confidence = min(abs(price_change) / 5.0, 0.8)
@@ -423,11 +590,4 @@ Respond in JSON format:
             reasoning=f"[Fallback] {reasoning}"
         )
     
-    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
-        """Calculate RSI indicator."""
-        delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return float(rsi.iloc[-1])
+

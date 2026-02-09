@@ -1,7 +1,7 @@
 """Execution router for routing orders to appropriate broker."""
 import logging
 from typing import Optional, Dict, Any, List, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.brokers.base import BaseBroker, Order, Position, Account, OrderStatus, OrderType, OrderSide
 from src.execution.factory import BrokerFactory
@@ -94,7 +94,7 @@ class ExecutionRouter:
             raise ValueError(f"Invalid order parameter: {e}")
 
         order = Order(
-            order_id=f"ORD_{int(datetime.utcnow().timestamp() * 1000)}",
+            order_id=f"ORD_{int(datetime.now(timezone.utc).timestamp() * 1000)}",
             symbol=symbol,
             side=side_enum,
             order_type=order_type_enum,

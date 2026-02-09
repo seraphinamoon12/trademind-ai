@@ -1,9 +1,9 @@
 """Database models and connection."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from sqlalchemy import (
     create_engine, Column, Integer, BigInteger, String, Float, DateTime, 
-    Numeric, JSON, text, Boolean, ForeignKey
+    Numeric, JSON, text, Boolean, ForeignKey, func
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -111,7 +111,7 @@ class Holding(Base):
     current_price = Column(Numeric(12, 4))
     market_value = Column(Numeric(15, 2))
     unrealized_pnl = Column(Numeric(15, 2))
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Safety fields
     stop_loss_pct = Column(Numeric(5, 4), default=0.05)  # Default 5%
@@ -127,7 +127,7 @@ class PortfolioSnapshot(Base):
     __tablename__ = "portfolio_snapshots"
     
     id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
     total_value = Column(Numeric(15, 2))
     cash_balance = Column(Numeric(15, 2))
     invested_value = Column(Numeric(15, 2))
@@ -151,7 +151,7 @@ class AgentDecision(Base):
     __tablename__ = "agent_decisions"
     
     id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow)
+    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     symbol = Column(String(10), nullable=False, index=True)
     agent = Column(String(50), nullable=False)  # technical, sentiment, risk, orchestrator
     decision = Column(String(20), nullable=False)  # BUY, SELL, HOLD, VETO
@@ -170,7 +170,7 @@ class CircuitBreakerEvent(Base):
     __tablename__ = "circuit_breaker_events"
     
     id = Column(Integer, primary_key=True)
-    triggered_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    triggered_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     reason = Column(String(500), nullable=False)
     portfolio_value = Column(Numeric(15, 2))
     daily_pnl = Column(Numeric(15, 2))
@@ -189,7 +189,7 @@ class RiskEvent(Base):
     __tablename__ = "risk_events"
     
     id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow)
+    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     event_type = Column(String(50), nullable=False)  # 'position_rejected', 'strategy_disabled', etc.
     symbol = Column(String(10))
     strategy = Column(String(50))
@@ -215,7 +215,7 @@ class StrategyPerformance(Base):
     is_enabled = Column(Boolean, default=True)
     disabled_at = Column(DateTime(timezone=True))
     disabled_reason = Column(String(200))
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     def __repr__(self):
         return f"<StrategyPerformance({self.strategy_name}: {self.win_rate:.1%})>"
@@ -226,7 +226,7 @@ class SectorAllocation(Base):
     __tablename__ = "sector_allocations"
     
     id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow)
+    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     sector = Column(String(50), nullable=False)
     allocation_pct = Column(Numeric(5, 4))
     value = Column(Numeric(15, 2))
