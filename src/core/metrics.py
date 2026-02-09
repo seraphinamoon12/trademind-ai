@@ -3,10 +3,22 @@
 This module provides a single source of truth for calculating
 trading performance metrics used across the codebase.
 """
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 import pandas as pd
 import numpy as np
 import pandas_ta as ta
+
+
+def calculate_returns(prices: pd.Series) -> pd.Series:
+    """Calculate percentage returns from price series.
+    
+    Args:
+        prices: Series of prices
+        
+    Returns:
+        Series of percentage returns
+    """
+    return prices.pct_change().dropna()
 
 
 def calculate_atr(
