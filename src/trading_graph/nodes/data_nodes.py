@@ -1,28 +1,12 @@
 """Nodes for data fetching in the LangGraph workflow."""
 
 import time
-import numpy as np
 from datetime import datetime, timezone
 from src.trading_graph.state import TradingState
 from src.trading_graph.types import FetchMarketDataOutput
 from src.data.providers import YahooFinanceProvider
 from src.data.indicators import TechnicalIndicators
-
-
-def convert_numpy_types(obj):
-    """Convert numpy types to native Python types for serialization."""
-    if isinstance(obj, dict):
-        return {str(k): convert_numpy_types(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_numpy_types(v) for v in obj]
-    elif isinstance(obj, tuple):
-        return tuple(convert_numpy_types(v) for v in obj)
-    elif isinstance(obj, (np.integer, np.floating)):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    else:
-        return obj
+from src.core.serialization import convert_numpy_types
 
 
 async def fetch_market_data(state: TradingState) -> FetchMarketDataOutput:

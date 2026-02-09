@@ -2,29 +2,13 @@
 
 import time
 import pandas as pd
-import numpy as np
 
 from src.trading_graph.state import TradingState
 from src.trading_graph.types import TechnicalAnalysisOutput, SentimentAnalysisOutput, MakeDecisionOutput
 from src.agents.technical import TechnicalAgent
 from src.agents.sentiment import SentimentAgent
 from src.config import settings
-
-
-def convert_numpy_types(obj):
-    """Convert numpy types to native Python types for serialization."""
-    if isinstance(obj, dict):
-        return {str(k): convert_numpy_types(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_numpy_types(v) for v in obj]
-    elif isinstance(obj, tuple):
-        return tuple(convert_numpy_types(v) for v in obj)
-    elif isinstance(obj, (np.integer, np.floating)):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    else:
-        return obj
+from src.core.serialization import convert_numpy_types
 
 
 async def technical_analysis(state: TradingState) -> TechnicalAnalysisOutput:

@@ -202,51 +202,6 @@ class PaperBroker(BaseBroker):
         """Get current market price for a symbol."""
         return 100.0
 
-    async def get_historical_bars(
-        self,
-        symbol: str,
-        duration: str = "1 D",
-        bar_size: str = "1 min",
-        what_to_show: str = "TRADES",
-        use_rth: bool = True,
-        end_date: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Get historical OHLCV bars for backtesting.
-        Returns simulated data based on current price.
-        """
-        base_price = await self.get_market_price(symbol)
-        bars = []
-
-        # Parse duration to number of bars
-        num_bars = 100  # Default
-
-        # Generate simulated historical bars
-        from datetime import timedelta
-        now = datetime.now(timezone.utc)
-
-        for i in range(num_bars, 0, -1):
-            # Simulate price movement
-            variation = (i % 10 - 5) * 0.001 * base_price
-            open_price = base_price + variation
-            high_price = open_price * 1.01
-            low_price = open_price * 0.99
-            close_price = open_price * (1 + (i % 5 - 2) * 0.001)
-            volume = 1000 + (i * 100)
-
-            bar_time = now - timedelta(minutes=i)
-
-            bars.append({
-                "date": bar_time,
-                "open": round(open_price, 2),
-                "high": round(high_price, 2),
-                "low": round(low_price, 2),
-                "close": round(close_price, 2),
-                "volume": volume
-            })
-
-        return bars
-
     async def validate_order(self, order: Order) -> Tuple[bool, str]:
         """Validate if an order can be placed."""
         if order.quantity <= 0:

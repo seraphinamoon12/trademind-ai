@@ -97,6 +97,6 @@ class MACrossoverStrategy(BaseStrategy):
                 'slow_ma': round(current_slow, 2),
                 'fast_period': self.fast_period,
                 'slow_period': self.slow_period,
-                'crossover_detected': confidence >= 0.7
+                'crossover_detected': confidence >= settings.confidence_threshold_high
             }
         )

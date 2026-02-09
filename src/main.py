@@ -8,7 +8,7 @@ import os
 
 from src.core.database import init_db, get_db
 from src.config import settings
-from src.api.routes import portfolio, trades, strategies, agent, safety
+from src.api.routes import portfolio, trades, strategies, agent, safety, human_review
 
 app = FastAPI(
     title=settings.app_name,
@@ -25,6 +25,7 @@ app.include_router(trades.router, prefix="/api/trades", tags=["trades"])
 app.include_router(strategies.router, prefix="/api/strategies", tags=["strategies"])
 app.include_router(agent.router, prefix="/api/agent", tags=["agent"])
 app.include_router(safety.router, prefix="/api/safety", tags=["safety"])
+app.include_router(human_review.router, prefix="", tags=["human-review"])
 
 
 @app.on_event("startup")

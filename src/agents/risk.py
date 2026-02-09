@@ -7,6 +7,7 @@ from src.config import settings
 from src.filters.liquidity import liquidity_filter
 from src.filters.earnings import earnings_filter
 from src.risk.sector_monitor import sector_monitor
+from src.core.metrics import calculate_atr
 
 
 class RiskAgent(BaseAgent):
@@ -138,19 +139,8 @@ class RiskAgent(BaseAgent):
         """Calculate Average True Range."""
         if data is None or len(data) < period:
             return None
-        
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        
-        tr1 = high - low
-        tr2 = abs(high - close.shift())
-        tr3 = abs(low - close.shift())
-        
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = tr.rolling(window=period).mean().iloc[-1]
-        
-        return atr if pd.notna(atr) else None
+
+        return calculate_atr(data['high'], data['low'], data['close'], period)
     
     def _calculate_position_size(
         self, 

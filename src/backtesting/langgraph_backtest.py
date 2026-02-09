@@ -207,57 +207,32 @@ class LangGraphBacktester:
 
     def _calculate_sharpe(self, returns: pd.Series, risk_free_rate: float = 0.02) -> float:
         """Calculate Sharpe ratio."""
-        if len(returns) < 2:
-            return 0.0
-
         try:
+            from src.core.metrics import calculate_sharpe_ratio
             daily_returns = returns.pct_change().dropna()
-            if daily_returns.std() == 0:
-                return 0.0
-
-            excess_returns = daily_returns - risk_free_rate / 252
-            sharpe = np.sqrt(252) * excess_returns.mean() / excess_returns.std()
-            return float(sharpe)
+            return calculate_sharpe_ratio(daily_returns, risk_free_rate)
         except Exception as e:
             logger.error(f"Sharpe calculation error: {e}")
             return 0.0
 
     def _calculate_max_drawdown(self, returns: pd.Series) -> float:
         """Calculate maximum drawdown."""
-        if len(returns) == 0:
-            return 0.0
-
         try:
-            cumulative = returns.pct_change().add(1).cumprod()
-            peak = cumulative.expanding(min_periods=1).max()
-            drawdown = (cumulative - peak) / peak
-            return float(drawdown.min())
+            from src.core.metrics import calculate_max_drawdown
+            max_dd, _ = calculate_max_drawdown(returns)
+            return max_dd
         except Exception as e:
             logger.error(f"Max drawdown calculation error: {e}")
             return 0.0
 
     def _calculate_win_rate(self, trades: List[Dict]) -> float:
         """Calculate win rate from trades."""
-        if len(trades) == 0:
+        try:
+            from src.core.metrics import calculate_win_rate_from_trade_pairs
+            return calculate_win_rate_from_trade_pairs(trades)
+        except Exception as e:
+            logger.error(f"Win rate calculation error: {e}")
             return 0.0
-
-        wins = 0
-        total_trades = 0
-
-        for i in range(0, len(trades) - 1, 2):
-            if i + 1 >= len(trades):
-                break
-
-            buy_trade = trades[i]
-            sell_trade = trades[i + 1]
-
-            if buy_trade["action"] == "BUY" and sell_trade["action"] == "SELL":
-                total_trades += 1
-                profit = (sell_trade["price"] - buy_trade["price"]) * buy_trade["quantity"]
-                if profit > 0:
-                    wins += 1
-
-        return float(wins / total_trades) if total_trades > 0 else 0.0
 
     def get_summary(self) -> Dict[str, Any]:
         """Get summary of all backtest results."""

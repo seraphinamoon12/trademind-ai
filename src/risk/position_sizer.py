@@ -5,6 +5,8 @@ import logging
 import yfinance as yf
 import pandas as pd
 
+from src.core.metrics import calculate_atr
+
 logger = logging.getLogger(__name__)
 
 
@@ -161,64 +163,40 @@ class VolatilityPositionSizer:
         
         try:
             hist = yf.Ticker(symbol).history(period=f"{period + 10}d")
-            
+
             if len(hist) < period:
                 logger.warning(f"Insufficient data for {symbol} ATR calculation")
                 return None
-            
-            # Calculate True Range
-            high = hist['High']
-            low = hist['Low']
-            close = hist['Close']
-            
-            tr1 = high - low
-            tr2 = abs(high - close.shift())
-            tr3 = abs(low - close.shift())
-            
-            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            atr = true_range.rolling(window=period).mean().iloc[-1]
-            
-            return float(atr) if pd.notna(atr) else None
-            
+
+            return calculate_atr(hist['High'], hist['Low'], hist['Close'], period)
+
         except Exception as e:
             logger.warning(f"Error calculating ATR for {symbol}: {e}")
             return None
-    
+
     def calculate_atr_from_data(
-        self, 
-        data: pd.DataFrame, 
+        self,
+        data: pd.DataFrame,
         period: int = None
     ) -> Optional[float]:
         """
         Calculate ATR from provided OHLCV data.
-        
+
         Args:
             data: DataFrame with 'high', 'low', 'close' columns
             period: ATR period
-            
+
         Returns:
             float: ATR value or None
         """
         if period is None:
             period = self.ATR_PERIOD
-        
+
         if data is None or len(data) < period:
             return None
-        
+
         try:
-            high = data['high']
-            low = data['low']
-            close = data['close']
-            
-            tr1 = high - low
-            tr2 = abs(high - close.shift())
-            tr3 = abs(low - close.shift())
-            
-            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            atr = true_range.rolling(window=period).mean().iloc[-1]
-            
-            return float(atr) if pd.notna(atr) else None
-            
+            return calculate_atr(data['high'], data['low'], data['close'], period)
         except Exception as e:
             logger.warning(f"Error calculating ATR from data: {e}")
             return None

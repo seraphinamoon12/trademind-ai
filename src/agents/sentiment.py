@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from src.agents.base import BaseAgent, AgentSignal, AgentDecision
 from src.config import settings
 from src.indicators.technical_utils import calculate_rsi
-from src.indicators.technical_utils import calculate_rsi
+from src.core.cache import generate_daily_symbol_key
 
 logger = logging.getLogger(__name__)
 
@@ -183,11 +183,6 @@ class SentimentAgent(BaseAgent):
         if not self.api_key:
             logger.warning("ZAI_API_KEY not set - sentiment agent will use fallback logic")
     
-    def _get_cache_key(self, symbol: str) -> str:
-        """Generate cache key based on symbol + date (not time)."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        return f"{symbol}:{today}"
-    
     def _get_cached_result(self, cache_key: str) -> Optional[AgentSignal]:
         """Get cached result if available and not expired."""
         if cache_key not in self._sentiment_cache:
@@ -227,9 +222,10 @@ class SentimentAgent(BaseAgent):
                 - reasoning: String explanation of the sentiment analysis
                 - data: Dict containing sentiment label and market_summary
         """
+        cache_key = generate_daily_symbol_key(symbol, 'sentiment')
+        
         try:
             # Check cache first
-            cache_key = self._get_cache_key(symbol)
             cached_result = self._get_cached_result(cache_key)
             if cached_result:
                 logger.debug(f"Using cached sentiment for {symbol}")

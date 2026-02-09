@@ -11,6 +11,7 @@ from src.data.indicators import TechnicalIndicators
 from src.strategies.rsi_reversion import RSIMeanReversionStrategy
 from src.strategies.ma_crossover import MACrossoverStrategy
 from src.config import settings
+from src.core.cache import generate_symbol_key
 
 
 class TechnicalAgent(BaseAgent):
@@ -41,11 +42,6 @@ class TechnicalAgent(BaseAgent):
         self.ma_strategy = MACrossoverStrategy()
         self._indicator_cache = {}
         self._cache_ttl = 300  # 5 minutes cache TTL
-    
-    def _get_cache_key(self, symbol: str, timeframe: str) -> str:
-        """Generate cache key based on symbol + timeframe + date."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        return f"{symbol}:{timeframe}:{today}"
     
     def _get_cached_indicators(self, cache_key: str) -> Optional[Dict[str, Any]]:
         """Get cached indicator results if available and not expired."""
@@ -173,7 +169,7 @@ class TechnicalAgent(BaseAgent):
     
     async def _analyze_timeframe(self, symbol: str, data: pd.DataFrame, timeframe: str) -> Dict[str, Any]:
         """Analyze a specific timeframe."""
-        cache_key = self._get_cache_key(symbol, timeframe)
+        cache_key = generate_symbol_key(symbol, timeframe, 'indicators')
         cached = self._get_cached_indicators(cache_key)
         if cached:
             return cached

@@ -205,90 +205,6 @@ def get_langsmith_config() -> Optional[Dict[str, Any]]:
     return config
 
 
-def traceable(run_type: str = "chain", name: Optional[str] = None):
-    """
-    Decorator to make functions traceable by LangSmith.
-
-    Args:
-        run_type: Type of run (chain, llm, tool, etc.)
-        name: Name for the trace (defaults to function name)
-    """
-    def decorator(func):
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            tracer = langsmith_manager.get_tracer()
-            if not tracer:
-                return await func(*args, **kwargs)
-
-            run_name = name or func.__name__
-            inputs = {"args": str(args), "kwargs": str(kwargs)}
-
-            run_id = langsmith_manager.create_run(run_name, inputs)
-
-            try:
-                result = await func(*args, **kwargs)
-                langsmith_manager.update_run(run_id, {"result": str(result)})
-                return result
-            except Exception as e:
-                langsmith_manager.update_run(run_id, {}, error=str(e))
-                raise
-
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            tracer = langsmith_manager.get_tracer()
-            if not tracer:
-                return func(*args, **kwargs)
-
-            run_name = name or func.__name__
-            inputs = {"args": str(args), "kwargs": str(kwargs)}
-
-            run_id = langsmith_manager.create_run(run_name, inputs)
-
-            try:
-                result = func(*args, **kwargs)
-                langsmith_manager.update_run(run_id, {"result": str(result)})
-                return result
-            except Exception as e:
-                langsmith_manager.update_run(run_id, {}, error=str(e))
-                raise
-
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
-
-    return decorator
-
-
-def log_trading_decision(
-    symbol: str,
-    action: str,
-    confidence: float,
-    reasoning: str,
-    execution_time: float,
-    metadata: Optional[Dict[str, Any]] = None
-) -> None:
-    """
-    Log a trading decision for LangSmith tracing.
-
-    Args:
-        symbol: Stock symbol
-        action: Trading action (BUY/SELL/HOLD)
-        confidence: Confidence score
-        reasoning: Trading reasoning
-        execution_time: Time taken for decision
-        metadata: Additional metadata
-    """
-    langsmith_manager.trace_execution(
-        symbol=symbol,
-        action=action,
-        confidence=confidence,
-        reasoning=reasoning,
-        execution_time=execution_time,
-        metadata=metadata
-    )
-
-
 def log_debate_result(
     symbol: str,
     bull_confidence: float,
@@ -339,24 +255,6 @@ def log_human_review(
         feedback=feedback,
         response_time=response_time
     )
-
-
-def add_trace_metadata(
-    run_id: str,
-    metadata: Optional[Dict[str, Any]]
-) -> None:
-    """
-    Add custom metadata to a LangSmith trace.
-
-    Args:
-        run_id: ID of the run to add metadata to
-        metadata: Dict of metadata to add
-    """
-    try:
-        if metadata:
-            logger.info(f"Adding metadata to trace {run_id}: {metadata}")
-    except Exception as e:
-        logger.warning(f"Failed to add trace metadata: {e}")
 
 
 class CostTracker:
