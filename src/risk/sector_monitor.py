@@ -18,7 +18,7 @@ class SectorConcentrationMonitor:
     - Max 30% of portfolio in any one sector
     """
     
-    MAX_SECTOR_PCT = 0.30  # 30% max per sector
+    MAX_SECTOR_PCT = 0.50  # 50% max per sector
     
     def __init__(self):
         self.symbol_to_sector: Dict[str, str] = {}

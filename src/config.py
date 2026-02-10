@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     strategy_auto_disable: bool = True
     
     # Safety - Sector Limits
-    max_sector_allocation_pct: float = 0.30  # 30% per sector
+    max_sector_allocation_pct: float = 0.50  # 50% per sector
     
     # Data
     data_provider: str = "yahoo"
