@@ -2502,3 +2502,299 @@ The plan is solid, well-structured, and builds appropriately on the existing Tra
 *Last Updated: 2026-02-08*
 *Based on: LANGGRAPH_MIGRATION_PLAN.md*
 
+
+---
+
+## NEW: Market-Wide Analysis Features (High Priority)
+
+### Phase X: Market Mood Detection
+
+**Status:** ⏳ PENDING IMPLEMENTATION  
+**Priority:** High  
+**Complexity:** Medium  
+**ETA:** Post-market hours today
+
+#### X.1 VIX Fear Index Monitor
+**Files:** `src/market_indicators/vix_monitor.py`, `src/agents/market_mood.py`  
+**Description:** Monitor VIX (Volatility Index) as market fear gauge.
+
+**Tasks:**
+- [ ] Create `VIXMonitor` class
+- [ ] Fetch VIX data from Yahoo Finance
+- [ ] Calculate VIX trend (rising/falling)
+- [ ] Define fear levels:
+  - VIX < 20: Low fear (greed)
+  - VIX 20-25: Normal
+  - VIX 25-30: Elevated fear
+  - VIX > 30: High fear (panic)
+- [ ] Generate market mood signal (risk-on/risk-off)
+- [ ] Cache VIX data (update every 15 min)
+- [ ] Add VIX to watchlist by default
+
+**Success Criteria:**
+```python
+vix = VIXMonitor()
+mood = await vix.get_market_mood()
+# Returns: {"level": "high_fear", "vix": 32.5, "signal": "risk_off"}
+```
+
+#### X.2 Market Breadth Analysis
+**Files:** `src/market_indicators/breadth_monitor.py`  
+**Description:** Track advance/decline ratio for market health.
+
+**Tasks:**
+- [ ] Create `MarketBreadthMonitor` class
+- [ ] Fetch NYSE advance/decline data
+- [ ] Calculate:
+  - Advance/Decline Ratio
+  - Advance/Decline Line
+  - % of stocks above 50-day MA
+  - % of stocks above 200-day MA
+- [ ] Generate breadth score (0-100)
+- [ ] Define breadth signals:
+  - Score > 70: Strong breadth (bullish)
+  - Score 40-70: Neutral
+  - Score < 40: Weak breadth (bearish)
+- [ ] Store breadth history
+- [ ] Display on dashboard
+
+**Success Criteria:**
+```python
+breadth = await breadth_monitor.get_breadth_score()
+# Returns: {"score": 65, "ad_ratio": 1.8, "above_50ma": 58, "signal": "neutral"}
+```
+
+#### X.3 CNN Fear & Greed Index Integration
+**Files:** `src/market_indicators/fear_greed.py`  
+**Description:** Scrape or API fetch CNN Fear & Greed Index.
+
+**Tasks:**
+- [ ] Create `FearGreedMonitor` class
+- [ ] Fetch Fear & Greed Index value
+- [ ] Parse components:
+  - Market Momentum
+  - Stock Price Strength
+  - Stock Price Breadth
+  - Put/Call Ratio
+  - Market Volatility (VIX)
+  - Safe Haven Demand
+  - Junk Bond Demand
+- [ ] Map index to mood:
+  - 0-25: Extreme Fear
+  - 26-40: Fear
+  - 41-60: Neutral
+  - 61-75: Greed
+  - 76-100: Extreme Greed
+- [ ] Generate trading signal
+- [ ] Cache results (update daily)
+
+**Success Criteria:**
+```python
+fg = FearGreedMonitor()
+index = await fg.get_index()
+# Returns: {"value": 45, "mood": "neutral", "signal": "hold"}
+```
+
+#### X.4 Market Mood Agent
+**Files:** `src/agents/market_mood.py`  
+**Description:** Combine all market-wide indicators into unified mood signal.
+
+**Tasks:**
+- [ ] Create `MarketMoodAgent` class (extends BaseAgent)
+- [ ] Aggregate inputs:
+  - VIX level (30% weight)
+  - Market breadth (30% weight)
+  - Fear & Greed Index (20% weight)
+  - Sector performance (20% weight)
+- [ ] Calculate composite mood score (-1 to +1)
+- [ ] Generate signals:
+  - Strong Bullish (>0.6): Risk-on, increase exposure
+  - Bullish (0.2 to 0.6): Normal trading
+  - Neutral (-0.2 to 0.2): Cautious
+  - Bearish (-0.6 to -0.2): Reduce exposure
+  - Strong Bearish (<-0.6): Risk-off, go to cash
+- [ ] Integrate with RiskAgent
+- [ ] Display mood on dashboard
+
+**Success Criteria:**
+```python
+agent = MarketMoodAgent()
+signal = await agent.analyze()
+# Returns: AgentSignal(decision="risk_on", confidence=0.75, mood="bullish")
+```
+
+---
+
+### Phase Y: Sector Rotation Tracking
+
+**Status:** ⏳ PENDING IMPLEMENTATION  
+**Priority:** High  
+**Complexity:** Medium  
+**ETA:** Post-market hours today
+
+#### Y.1 Sector Performance Monitor
+**Files:** `src/market_indicators/sector_performance.py`  
+**Description:** Track relative performance of all market sectors.
+
+**Tasks:**
+- [ ] Create `SectorPerformanceMonitor` class
+- [ ] Define sector ETFs to track:
+  - XLK (Technology)
+  - XLF (Financials)
+  - XLE (Energy)
+  - XLU (Utilities)
+  - XLI (Industrials)
+  - XLP (Consumer Staples)
+  - XLY (Consumer Discretionary)
+  - XLB (Materials)
+  - XLC (Communication)
+  - XLRE (Real Estate)
+  - XBI (Biotech)
+  - XRT (Retail)
+- [ ] Calculate performance metrics:
+  - 1-day return
+  - 5-day return
+  - 1-month return
+  - YTD return
+  - Relative strength vs SPY
+- [ ] Rank sectors by performance
+- [ ] Identify top 3 and bottom 3 sectors
+- [ ] Store sector performance history
+
+**Success Criteria:**
+```python
+sectors = SectorPerformanceMonitor()
+performance = await sectors.get_performance()
+# Returns: [
+#   {"sector": "Technology", "etf": "XLK", "1d": 2.1, "1m": 8.5, "rank": 1},
+#   {"sector": "Energy", "etf": "XLE", "1d": -1.2, "1m": -3.2, "rank": 11}
+# ]
+```
+
+#### Y.2 Sector Rotation Detector
+**Files:** `src/market_indicators/sector_rotation.py`  
+**Description:** Detect money flow between sectors (rotation signals).
+
+**Tasks:**
+- [ ] Create `SectorRotationDetector` class
+- [ ] Calculate momentum for each sector:
+  - Price momentum (10-day vs 50-day)
+  - Relative strength vs S&P 500
+  - Volume momentum
+- [ ] Detect rotation patterns:
+  - Growth → Value
+  - Tech → Energy
+  - Cyclicals → Defensives
+  - Risk-on → Risk-off
+- [ ] Generate rotation signals:
+  - "Money flowing INTO [sector]"
+  - "Money flowing OUT OF [sector]"
+  - "Rotation from [sector A] to [sector B]"
+- [ ] Track rotation strength (0-100)
+- [ ] Historical rotation analysis
+
+**Success Criteria:**
+```python
+rotation = SectorRotationDetector()
+signals = await rotation.get_signals()
+# Returns: [
+#   {"type": "inflow", "sector": "Energy", "strength": 75, "signal": "strong_buy"},
+#   {"type": "outflow", "sector": "Technology", "strength": 60, "signal": "weak_hold"}
+# ]
+```
+
+#### Y.3 Sector Momentum Scoring
+**Files:** `src/market_indicators/sector_momentum.py`  
+**Description:** Calculate composite momentum score for each sector.
+
+**Tasks:**
+- [ ] Create `SectorMomentumScorer` class
+- [ ] Calculate momentum components:
+  - Price momentum (30%)
+  - Volume momentum (20%)
+  - Relative strength (30%)
+  - Trend alignment (20%)
+- [ ] Score range: -100 (strong downtrend) to +100 (strong uptrend)
+- [ ] Categorize sectors:
+  - Leading (+50 to +100): Strong uptrend
+  - Improving (+20 to +50): Getting stronger
+  - Neutral (-20 to +20): Sideways
+  - Weakening (-50 to -20): Getting weaker
+  - Lagging (-100 to -50): Strong downtrend
+- [ ] Generate sector allocation recommendations
+- [ ] Update daily
+
+**Success Criteria:**
+```python
+scorer = SectorMomentumScorer()
+scores = await scorer.get_scores()
+# Returns: {
+#   "Technology": {"score": 65, "category": "leading", "recommendation": "overweight"},
+#   "Energy": {"score": -45, "category": "weakening", "recommendation": "underweight"}
+# }
+```
+
+#### Y.4 Sector Rotation Agent
+**Files:** `src/agents/sector_rotation.py`  
+**Description:** Make trading decisions based on sector rotation.
+
+**Tasks:**
+- [ ] Create `SectorRotationAgent` class (extends BaseAgent)
+- [ ] Analyze sector rotation data
+- [ ] Generate signals:
+  - "Buy [sector ETF] - rotation in progress"
+  - "Sell [sector ETF] - rotation out"
+  - "Avoid [sector] - lagging momentum"
+  - "Focus on [sector] - leading momentum"
+- [ ] Recommend top 3 sectors to buy
+- [ ] Recommend top 3 sectors to avoid
+- [ ] Weight recommendations by rotation strength
+- [ ] Integrate with portfolio manager
+- [ ] Display sector allocation on dashboard
+
+**Success Criteria:**
+```python
+agent = SectorRotationAgent()
+signal = await agent.analyze()
+# Returns: AgentSignal(
+#   decision="rotate",
+#   confidence=0.82,
+#   reasoning="Strong rotation from Tech to Energy",
+#   data={"buy_sectors": ["XLE", "XLF"], "sell_sectors": ["XLK"]}
+# )
+```
+
+#### Y.5 Sector-Aware Auto-Trader
+**Files:** `auto_trader.py` (update)  
+**Description:** Enhance auto-trader with sector rotation awareness.
+
+**Tasks:**
+- [ ] Integrate SectorRotationAgent
+- [ ] Filter watchlist by top-performing sectors
+- [ ] Prefer stocks in leading sectors
+- [ ] Avoid stocks in lagging sectors
+- [ ] Log sector allocation
+- [ ] Display sector rotation status
+
+**Success Criteria:**
+```
+Auto-trader selects stocks from top 3 sectors only
+Avoids bottom 3 sectors completely
+Logs: "Selecting AAPL from Technology (Leading sector)"
+```
+
+---
+
+### Integration Checklist
+
+- [ ] Add MarketMoodAgent to multi-agent system
+- [ ] Add SectorRotationAgent to multi-agent system
+- [ ] Update dashboard to show market mood
+- [ ] Update dashboard to show sector performance
+- [ ] Add sector allocation pie chart
+- [ ] Add VIX indicator to header
+- [ ] Add Fear & Greed index widget
+- [ ] Test all new features with paper trading
+- [ ] Document new APIs
+- [ ] Update README with new features
+
