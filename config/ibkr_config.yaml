@@ -6,7 +6,7 @@ ibkr:
   host: "127.0.0.1"
   port: 7497
   client_id: 1
-  account: ""  # Set via environment variable IBKR_ACCOUNT or local config
+  account: ""  # Set via IBKR_ACCOUNT environment variable or leave empty for auto-detect
   paper_trading: true
 
 # Order Settings

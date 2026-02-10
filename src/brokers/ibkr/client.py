@@ -1,5 +1,6 @@
 """Interactive Brokers broker implementation using ib_insync."""
 import asyncio
+import os
 from typing import Optional, List, Dict, Any, Tuple, Callable
 from datetime import datetime
 import logging
@@ -37,7 +38,8 @@ class IBKRBroker(BaseBroker):
         self.host = host
         self.port = port
         self.client_id = client_id
-        self.account = account
+        # Use environment variable if account not provided directly
+        self.account = account or os.getenv("IBKR_ACCOUNT", "")
         self.paper_trading = paper_trading
         self.exchange = "SMART"
         self.currency = "USD"
@@ -70,8 +72,10 @@ class IBKRBroker(BaseBroker):
             self._setup_account_callbacks()
 
             managed_accounts = self.ib.managedAccounts()
-            account_id = self.account or (managed_accounts[0] if managed_accounts else None)
+            # Use environment variable, config, or auto-detect from IB
+            account_id = self.account or os.getenv("IBKR_ACCOUNT") or (managed_accounts[0] if managed_accounts else None)
             if account_id:
+                self.account = account_id  # Save for future use
                 await self.ib.reqAccountSummaryAsync()
                 logger.info(f"Connected to IBKR account: {account_id}")
             else:
