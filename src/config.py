@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     
     # Database - Updated for port 5433
     database_url: str = Field(
-        default="postgresql://trading:trading123@localhost:5433/trading_agent"
+        default_factory=lambda: os.getenv(
+            "DATABASE_URL", 
+            f"postgresql://{os.getenv('DB_USER', 'trading')}:{os.getenv('DB_PASSWORD', 'trading123')}@localhost:5433/{os.getenv('DB_NAME', 'trading_agent')}"
+        )
     )
     
     # Redis
