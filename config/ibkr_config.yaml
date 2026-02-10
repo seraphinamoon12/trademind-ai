@@ -2,11 +2,11 @@
 
 # Connection Settings
 ibkr:
-  enabled: false
+  enabled: true
   host: "127.0.0.1"
   port: 7497
   client_id: 1
-  account: ""
+  account: ""  # Set via environment variable IBKR_ACCOUNT or local config
   paper_trading: true
 
 # Order Settings
