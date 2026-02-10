@@ -1,10 +1,11 @@
 """IBKR Trading API routes - Execute trades via IB Gateway."""
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from datetime import datetime
 import logging
+import re
 
 from src.core.database import get_db, Trade
 from src.config import settings
@@ -19,11 +20,26 @@ router = APIRouter()
 
 class OrderRequest(BaseModel):
     """Order request model."""
-    symbol: str = Field(..., description="Stock symbol (e.g., AAPL)")
+    symbol: str = Field(..., description="Stock symbol (e.g., AAPL)", max_length=10)
     quantity: int = Field(..., gt=0, description="Number of shares")
     side: Literal["buy", "sell"] = Field(..., description="Order side")
     order_type: Literal["market", "limit"] = Field(default="market", description="Order type")
     price: Optional[float] = Field(default=None, description="Limit price (required for limit orders)")
+    
+    @validator('symbol')
+    def validate_symbol(cls, v):
+        """Validate symbol format."""
+        v = v.upper().strip()
+        if not re.match(r'^[A-Z]{1,10}$', v):
+            raise ValueError('Symbol must be 1-10 uppercase letters')
+        return v
+    
+    @validator('price')
+    def validate_price(cls, v, values):
+        """Validate price for limit orders."""
+        if values.get('order_type') == 'limit' and (v is None or v <= 0):
+            raise ValueError('Limit orders require a positive price')
+        return v
     
     class Config:
         json_schema_extra = {
@@ -81,9 +97,8 @@ async def get_ibkr_status():
         return {
             "enabled": settings.ibkr_enabled,
             "connected": ibkr.is_connected,
-            "host": settings.ibkr_host,
-            "port": settings.ibkr_port,
-            "paper_trading": settings.ibkr_paper_trading
+            "paper_trading": settings.ibkr_paper_trading,
+            "mode": "paper" if settings.ibkr_paper_trading else "live"
         }
     except Exception as e:
         return {
@@ -180,10 +195,18 @@ async def get_ibkr_positions():
 # ============== Trading Endpoints ==============
 
 @router.post("/orders", response_model=OrderResponse)
-async def place_order(order_req: OrderRequest, background_tasks: BackgroundTasks):
+async def place_order(order_req: OrderRequest):
     """Place a new order via IB Gateway."""
     if not settings.ibkr_enabled:
         raise HTTPException(status_code=503, detail="IBKR integration disabled")
+    
+    # Enforce paper trading for safety
+    if not settings.ibkr_paper_trading:
+        logger.warning(f"Live trading order rejected: {order_req.side.upper()} {order_req.quantity} {order_req.symbol}")
+        raise HTTPException(
+            status_code=403, 
+            detail="Live trading is disabled. Enable paper trading in settings."
+        )
     
     try:
         ibkr = get_ibkr_integration()
@@ -303,14 +326,21 @@ async def get_order_status(order_id: str):
     if not settings.ibkr_enabled:
         raise HTTPException(status_code=503, detail="IBKR integration disabled")
     
+    # Validate order_id is numeric
+    try:
+        order_id_int = int(order_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid order ID format")
+    
     try:
         ibkr = get_ibkr_integration()
         
         if not await ibkr.ensure_connected():
             raise HTTPException(status_code=503, detail="Not connected to IB Gateway")
         
-        # Get order from broker's order cache
-        order = ibkr.broker._orders.get(int(order_id))
+        # Get order from broker's order cache using public method
+        orders = await ibkr.broker.get_orders()
+        order = next((o for o in orders if str(o.order_id) == order_id), None)
         
         if not order:
             raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
