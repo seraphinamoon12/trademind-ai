@@ -1,19 +1,25 @@
-"""Interactive Brokers broker implementation using ib_insync."""
+"""Interactive Brokers broker implementation using ibapi with thread-based wrapper."""
 import asyncio
 import os
+import threading
+import time
+import queue
 from typing import Optional, List, Dict, Any, Tuple, Callable
 from datetime import datetime
 import logging
 
 try:
-    from ib_insync import IB, Stock, MarketOrder, LimitOrder, StopOrder, StopLimitOrder
+    from ibapi.client import EClient
+    from ibapi.wrapper import EWrapper
+    from ibapi.contract import Contract
+    from ibapi.order import Order as IBOrder
+    from ibapi.common import BarData
 except ImportError:
-    IB = None
-    Stock = None
-    MarketOrder = None
-    LimitOrder = None
-    StopOrder = None
-    StopLimitOrder = None
+    EClient = None
+    EWrapper = None
+    Contract = None
+    IBOrder = None
+    BarData = None
 
 from src.brokers.base import (
     BaseBroker, Order, Position, Account,
@@ -23,8 +29,180 @@ from src.brokers.base import (
 logger = logging.getLogger(__name__)
 
 
+class IBKRWrapper(EWrapper):
+    """Wrapper to receive IB API callbacks."""
+
+    def __init__(self):
+        super().__init__()
+        self.next_order_id = None
+        self.account_values = {}
+        self.positions = []
+        self.account_summary = {}
+        self.orders = {}
+        self.open_orders = []
+        self.market_data = {}
+        self.historical_data = {}
+        self.managed_accounts = []
+        self.error_messages = []
+
+        # Synchronization events
+        self.connected_event = threading.Event()
+        self.next_valid_id_event = threading.Event()
+        self.account_download_event = threading.Event()
+        self.positions_event = threading.Event()
+        self.account_summary_event = threading.Event()
+        self.orders_event = threading.Event()
+        self.market_data_event = threading.Event()
+        self.historical_data_event = threading.Event()
+
+    def nextValidId(self, orderId: int):
+        """Callback when connection is established."""
+        super().nextValidId(orderId)
+        self.next_order_id = orderId
+        self.next_valid_id_event.set()
+        self.connected_event.set()
+        logger.info(f"Connected to IB Gateway. Next valid order ID: {orderId}")
+
+    def error(self, reqId: int, errorCode: int, errorString: str):
+        """Callback for error messages."""
+        super().error(reqId, errorCode, errorString)
+
+        # Codes 2104, 2106, 2158 are informational, not errors
+        if errorCode in [2104, 2106, 2158]:
+            logger.info(f"IB Info [{errorCode}]: {errorString}")
+            return
+
+        logger.error(f"IB Error [{errorCode}] ReqId {reqId}: {errorString}")
+        self.error_messages.append({
+            "reqId": reqId,
+            "errorCode": errorCode,
+            "errorString": errorString,
+            "timestamp": datetime.now()
+        })
+
+    def managedAccounts(self, accountsList: str):
+        """Callback with list of managed accounts."""
+        super().managedAccounts(accountsList)
+        self.managed_accounts = accountsList.split(",")
+        logger.info(f"Managed accounts: {self.managed_accounts}")
+
+    def accountSummary(self, reqId: int, account: str, tag: str, value: str, currency: str):
+        """Callback for account summary data."""
+        super().accountSummary(reqId, account, tag, value, currency)
+        if account not in self.account_summary:
+            self.account_summary[account] = {}
+        self.account_summary[account][tag] = value
+
+    def accountSummaryEnd(self, reqId: int):
+        """Callback when account summary is complete."""
+        super().accountSummaryEnd(reqId)
+        self.account_summary_event.set()
+
+    def updateAccountValue(self, key: str, val: str, currency: str, accountName: str):
+        """Callback for account value updates."""
+        super().updateAccountValue(key, val, currency, accountName)
+        if accountName not in self.account_values:
+            self.account_values[accountName] = {}
+        self.account_values[accountName][key] = val
+
+    def accountDownloadEnd(self, accountName: str):
+        """Callback when account download is complete."""
+        super().accountDownloadEnd(accountName)
+        self.account_download_event.set()
+        logger.info(f"Account download complete for {accountName}")
+
+    def position(self, account: str, contract: Contract, position: float, avgCost: float):
+        """Callback for position data."""
+        super().position(account, contract, position, avgCost)
+        self.positions.append({
+            "account": account,
+            "symbol": contract.symbol,
+            "position": position,
+            "avgCost": avgCost,
+            "contract": contract
+        })
+
+    def positionEnd(self):
+        """Callback when all positions have been received."""
+        super().positionEnd()
+        self.positions_event.set()
+        logger.info(f"Received {len(self.positions)} positions")
+
+    def openOrder(self, orderId: int, contract: Contract, order: IBOrder, orderState):
+        """Callback for open order data."""
+        super().openOrder(orderId, contract, order, orderState)
+        self.open_orders.append({
+            "orderId": orderId,
+            "contract": contract,
+            "order": order,
+            "orderState": orderState
+        })
+
+    def openOrderEnd(self):
+        """Callback when all open orders have been received."""
+        super().openOrderEnd()
+        self.orders_event.set()
+        logger.info(f"Received {len(self.open_orders)} open orders")
+
+    def orderStatus(self, orderId: int, status: str, filled: float, remaining: float,
+                    avgFillPrice: float, permId: int, parentId: int, lastFillPrice: float,
+                    clientId: int, whyHeld: str, mktCapPrice: float):
+        """Callback for order status updates."""
+        super().orderStatus(orderId, status, filled, remaining, avgFillPrice, permId,
+                           parentId, lastFillPrice, clientId, whyHeld, mktCapPrice)
+        self.orders[orderId] = {
+            "status": status,
+            "filled": filled,
+            "remaining": remaining,
+            "avgFillPrice": avgFillPrice
+        }
+        logger.info(f"Order {orderId} status: {status}, filled: {filled}")
+
+    def tickPrice(self, reqId: int, tickType: int, price: float, attrib):
+        """Callback for market data price tick."""
+        super().tickPrice(reqId, tickType, price, attrib)
+        if reqId not in self.market_data:
+            self.market_data[reqId] = {}
+
+        # tickType: 1=bid, 2=ask, 4=last, 6=high, 7=low, 9=close
+        tick_map = {1: "bid", 2: "ask", 4: "last", 6: "high", 7: "low", 9: "close"}
+        if tickType in tick_map:
+            self.market_data[reqId][tick_map[tickType]] = price
+
+    def tickSize(self, reqId: int, tickType: int, size: int):
+        """Callback for market data size tick."""
+        super().tickSize(reqId, tickType, size)
+        if reqId not in self.market_data:
+            self.market_data[reqId] = {}
+
+        # tickType: 0=bidSize, 3=askSize, 5=lastSize, 8=volume
+        tick_map = {0: "bidSize", 3: "askSize", 5: "lastSize", 8: "volume"}
+        if tickType in tick_map:
+            self.market_data[reqId][tick_map[tickType]] = size
+
+    def historicalData(self, reqId: int, bar: BarData):
+        """Callback for historical data bars."""
+        super().historicalData(reqId, bar)
+        if reqId not in self.historical_data:
+            self.historical_data[reqId] = []
+        self.historical_data[reqId].append(bar)
+
+    def historicalDataEnd(self, reqId: int, start: str, end: str):
+        """Callback when historical data is complete."""
+        super().historicalDataEnd(reqId, start, end)
+        self.historical_data_event.set()
+        logger.info(f"Historical data complete for reqId {reqId}")
+
+
+class IBKRClient(EClient):
+    """EClient implementation that runs in separate thread."""
+
+    def __init__(self, wrapper):
+        super().__init__(wrapper)
+
+
 class IBKRBroker(BaseBroker):
-    """Interactive Brokers broker implementation."""
+    """Interactive Brokers broker implementation using ibapi."""
 
     def __init__(
         self,
@@ -38,45 +216,75 @@ class IBKRBroker(BaseBroker):
         self.host = host
         self.port = port
         self.client_id = client_id
-        # Use environment variable if account not provided directly
         self.account = account or os.getenv("IBKR_ACCOUNT", "")
         self.paper_trading = paper_trading
         self.exchange = "SMART"
         self.currency = "USD"
-        self.market_data_timeout = 0.1
 
-        if IB is None:
+        if EClient is None or EWrapper is None:
             raise ImportError(
-                "ib_insync is not installed. Please install it with: pip install ib_insync>=0.9.86"
+                "ibapi is not installed. Please install it with: pip install ibapi"
             )
 
-        self.ib = IB()
+        # Create wrapper and client
+        self.wrapper = IBKRWrapper()
+        self.client = IBKRClient(self.wrapper)
+
+        # Thread management
+        self.api_thread = None
+        self._req_id = 1000
+        self._req_id_lock = threading.Lock()
+
         self._orders: Dict[str, Order] = {}
-        self._tickers: Dict[str, Any] = {}
-        self._account_values: Dict[str, Any] = {}
-        self._realtime_bars: Dict[str, Tuple[Any, Callable]] = {}
+
+    def _get_next_req_id(self) -> int:
+        """Get next request ID in thread-safe manner."""
+        with self._req_id_lock:
+            req_id = self._req_id
+            self._req_id += 1
+            return req_id
+
+    def _run_client(self):
+        """Run the client in a separate thread."""
+        try:
+            self.client.run()
+        except Exception as e:
+            logger.error(f"Client thread error: {e}")
 
     async def connect(self) -> None:
         """Establish connection to IBKR TWS or Gateway."""
         try:
-            await self.ib.connectAsync(
-                host=self.host,
-                port=self.port,
-                clientId=self.client_id,
-                timeout=10
-            )
+            # Connect in thread-safe manner
+            def _connect():
+                self.client.connect(self.host, self.port, self.client_id)
+                return True
+
+            result = await asyncio.to_thread(_connect)
+
+            # Start API thread
+            self.api_thread = threading.Thread(target=self._run_client, daemon=True)
+            self.api_thread.start()
+
+            # Wait for connection with timeout
+            if not self.wrapper.connected_event.wait(timeout=10):
+                raise TimeoutError("Connection timeout")
+
+            if not self.wrapper.next_valid_id_event.wait(timeout=10):
+                raise TimeoutError("Next valid ID timeout")
+
             self._connected = True
 
-            self._setup_order_callbacks()
-            self._setup_position_callbacks()
-            self._setup_account_callbacks()
-
-            managed_accounts = self.ib.managedAccounts()
-            # Use environment variable, config, or auto-detect from IB
+            # Get account information
+            managed_accounts = self.wrapper.managed_accounts
             account_id = self.account or os.getenv("IBKR_ACCOUNT") or (managed_accounts[0] if managed_accounts else None)
+
             if account_id:
-                self.account = account_id  # Save for future use
-                await self.ib.reqAccountSummaryAsync()
+                self.account = account_id
+                # Request account updates
+                await asyncio.to_thread(self.client.reqAccountUpdates, True, account_id)
+                # Request account summary
+                await asyncio.to_thread(self.client.reqAccountSummary, 9001, "All", "$LEDGER")
+                await asyncio.to_thread(lambda: self.wrapper.account_summary_event.wait(timeout=5))
                 logger.info(f"Connected to IBKR account: {account_id}")
             else:
                 logger.warning("Connected to IBKR but no account ID found")
@@ -89,102 +297,64 @@ class IBKRBroker(BaseBroker):
     async def disconnect(self) -> None:
         """Close connection to IBKR."""
         if self._connected:
-            await self.ib.disconnectAsync()
+            await asyncio.to_thread(self.client.disconnect)
+            if self.api_thread and self.api_thread.is_alive():
+                self.api_thread.join(timeout=2)
             self._connected = False
             logger.info("Disconnected from IBKR")
-
-    async def connect_with_retry(
-        self,
-        max_retries: int = 5,
-        retry_delay: int = 5
-    ) -> bool:
-        """
-        Connect with automatic retry logic.
-
-        Args:
-            max_retries: Maximum number of connection attempts
-            retry_delay: Seconds between retries
-
-        Returns:
-            True if connected successfully
-        """
-        for attempt in range(max_retries):
-            try:
-                await self.connect()
-                return True
-            except Exception as e:
-                logger.warning(f"Connection attempt {attempt + 1} failed: {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay)
-        
-        raise ConnectionError(f"Failed to connect after {max_retries} attempts")
-
-    def _setup_reconnection_callbacks(self):
-        """Setup callbacks for automatic reconnection on disconnect."""
-        self.ib.disconnectedEvent += self._on_disconnect
-
-    def _on_disconnect(self):
-        """Handle disconnection event."""
-        logger.warning("IBKR connection lost")
-        self._connected = False
-        asyncio.create_task(self._attempt_reconnection())
-
-    async def _attempt_reconnection(self):
-        """Attempt to reconnect in background."""
-        try:
-            await self.connect_with_retry(max_retries=3, retry_delay=10)
-            logger.info("Successfully reconnected to IBKR")
-        except Exception as e:
-            logger.error(f"Reconnection failed: {e}")
 
     async def place_order(self, order: Order) -> str:
         """Place an order and return order ID."""
         if not self.is_connected:
             raise ConnectionError("Not connected to IBKR")
 
-        contract = Stock(order.symbol, self.exchange, self.currency)
+        def _place_order():
+            # Create contract
+            contract = Contract()
+            contract.symbol = order.symbol
+            contract.secType = "STK"
+            contract.exchange = self.exchange
+            contract.currency = self.currency
 
-        if order.order_type == OrderType.MARKET:
-            ib_order = MarketOrder(order.side.value, order.quantity)
-        elif order.order_type == OrderType.LIMIT:
-            ib_order = LimitOrder(order.side.value, order.quantity, order.price)
-        elif order.order_type == OrderType.STOP:
-            ib_order = StopOrder(order.side.value, order.quantity, order.stop_price)
-        elif order.order_type == OrderType.STOP_LIMIT:
-            ib_order = StopLimitOrder(order.side.value, order.quantity, order.stop_price, order.price)
-        else:
-            raise ValueError(f"Unsupported order type: {order.order_type}")
+            # Create IB order
+            ib_order = IBOrder()
+            ib_order.action = order.side.value
+            ib_order.totalQuantity = order.quantity
+            ib_order.orderType = order.order_type.value
 
-        trade = await self.ib.placeOrderAsync(contract, ib_order)
+            if order.order_type == OrderType.LIMIT:
+                ib_order.lmtPrice = order.price
+            elif order.order_type == OrderType.STOP:
+                ib_order.auxPrice = order.stop_price
+            elif order.order_type == OrderType.STOP_LIMIT:
+                ib_order.lmtPrice = order.price
+                ib_order.auxPrice = order.stop_price
 
-        if trade.orderStatus and trade.orderStatus.orderId:
-            order.order_id = str(trade.orderStatus.orderId)
-            order.status = self._map_ib_order_status(trade.orderStatus.status)
-            self._orders[order.order_id] = order
-            logger.info(f"Placed order {order.order_id} for {order.symbol}")
-            return order.order_id
+            # Place order
+            order_id = self.wrapper.next_order_id
+            self.wrapper.next_order_id += 1
 
-        raise RuntimeError(f"Failed to place order for {order.symbol}")
+            self.client.placeOrder(order_id, contract, ib_order)
+
+            return str(order_id)
+
+        order_id = await asyncio.to_thread(_place_order)
+        order.order_id = order_id
+        order.status = OrderStatus.SUBMITTED
+        self._orders[order_id] = order
+
+        logger.info(f"Placed order {order_id} for {order.symbol}")
+        return order_id
 
     async def cancel_order(self, order_id: str) -> bool:
         """Cancel an order by ID."""
         if not self.is_connected:
             raise ConnectionError("Not connected to IBKR")
 
-        if order_id not in self._orders:
-            logger.warning(f"Order {order_id} not found")
-            return False
-
-        order = self._orders[order_id]
-        ib_order_id = int(order_id)
-
         try:
-            trade = await self.ib.cancelOrderAsync(ib_order_id)
-            await asyncio.sleep(0.1)
-            if trade and trade.orderStatus:
-                order.status = self._map_ib_order_status(trade.orderStatus.status)
-            else:
-                order.status = OrderStatus.CANCELLED
+            await asyncio.to_thread(self.client.cancelOrder, int(order_id), "")
+            if order_id in self._orders:
+                self._orders[order_id].status = OrderStatus.CANCELLED
             logger.info(f"Cancelled order {order_id}")
             return True
         except Exception as e:
@@ -196,58 +366,46 @@ class IBKRBroker(BaseBroker):
         if order_id in self._orders:
             return self._orders[order_id].status
 
+        ib_order_id = int(order_id)
+        if ib_order_id in self.wrapper.orders:
+            status_str = self.wrapper.orders[ib_order_id]["status"]
+            return self._map_ib_order_status(status_str)
+
         logger.warning(f"Order {order_id} not found")
         return OrderStatus.PENDING
 
     async def get_orders(self, status: Optional[str] = None) -> List[Order]:
-        """
-        Get orders with optional status filtering.
-
-        Args:
-            status: Filter by status - "open", "filled", "cancelled", or None for all
-
-        Returns:
-            List of Order objects
-        """
+        """Get orders with optional status filtering."""
         if not self.is_connected:
             raise ConnectionError("Not connected to IBKR")
 
+        def _get_orders():
+            self.wrapper.open_orders.clear()
+            self.wrapper.orders_event.clear()
+            self.client.reqAllOpenOrders()
+            self.wrapper.orders_event.wait(timeout=5)
+            return self.wrapper.open_orders
+
+        open_orders = await asyncio.to_thread(_get_orders)
+
         orders = []
-        for trade in self.ib.trades():
-            if not trade.orderStatus:
-                continue
+        for order_data in open_orders:
+            order_id = str(order_data["orderId"])
+            symbol = order_data["contract"].symbol
+            ib_order = order_data["order"]
 
-            ib_status = self._map_ib_order_status(trade.orderStatus.status)
-            if status is not None:
-                status_lower = status.lower()
-                if status_lower == "open" and ib_status not in (OrderStatus.PENDING, OrderStatus.SUBMITTED, OrderStatus.PARTIAL):
-                    continue
-                elif status_lower == "filled" and ib_status != OrderStatus.FILLED:
-                    continue
-                elif status_lower == "cancelled" and ib_status != OrderStatus.CANCELLED:
-                    continue
-
-            order_id = str(trade.orderStatus.orderId)
-            symbol = trade.contract.symbol
-
-            side = OrderSide.BUY if trade.order.action == "BUY" else OrderSide.SELL
-            order_type = self._map_ib_order_type(trade.order.orderType)
-            quantity = int(trade.order.totalQuantity)
-            price = float(trade.order.lmtPrice) if trade.order.lmtPrice else None
-            stop_price = float(trade.order.auxPrice) if trade.order.auxPrice else None
+            side = OrderSide.BUY if ib_order.action == "BUY" else OrderSide.SELL
+            order_type = self._map_ib_order_type(ib_order.orderType)
 
             order = Order(
                 order_id=order_id,
                 symbol=symbol,
                 side=side,
                 order_type=order_type,
-                quantity=quantity,
-                price=price,
-                stop_price=stop_price,
-                status=ib_status,
-                filled_quantity=int(trade.orderStatus.filled),
-                avg_fill_price=float(trade.orderStatus.avgFillPrice) if trade.orderStatus.avgFillPrice else None,
-                commission=float(trade.commissionReport().commission) if trade.commissionReport() else None
+                quantity=int(ib_order.totalQuantity),
+                price=float(ib_order.lmtPrice) if ib_order.lmtPrice else None,
+                stop_price=float(ib_order.auxPrice) if ib_order.auxPrice else None,
+                status=self._map_ib_order_status(order_data["orderState"].status)
             )
 
             orders.append(order)
@@ -260,18 +418,33 @@ class IBKRBroker(BaseBroker):
         if not self.is_connected:
             raise ConnectionError("Not connected to IBKR")
 
+        def _get_positions():
+            self.wrapper.positions.clear()
+            self.wrapper.positions_event.clear()
+            self.client.reqPositions()
+            self.wrapper.positions_event.wait(timeout=5)
+            return self.wrapper.positions
+
+        positions_data = await asyncio.to_thread(_get_positions)
+
         positions = []
-        for pos in self.ib.positions():
-            symbol = pos.contract.symbol
-            quantity = pos.position
-            avg_cost = pos.avgCost
-            market_price = pos.marketPrice()
+        for pos in positions_data:
+            symbol = pos["symbol"]
+            quantity = int(pos["position"])
+            avg_cost = pos["avgCost"]
+
+            # Get current market price
+            try:
+                market_price = await self.get_market_price(symbol)
+            except:
+                market_price = avg_cost
+
             market_value = abs(quantity * market_price)
             unrealized_pnl = (market_price - avg_cost) * quantity
 
             positions.append(Position(
                 symbol=symbol,
-                quantity=int(quantity),
+                quantity=quantity,
                 avg_cost=avg_cost,
                 current_price=market_price,
                 market_value=market_value,
@@ -285,29 +458,38 @@ class IBKRBroker(BaseBroker):
         if not self.is_connected:
             raise ConnectionError("Not connected to IBKR")
 
-        summary = self.ib.accountSummary()
-        account_values = {}
+        def _get_account_summary():
+            # Request fresh account summary with ALL tags
+            self.wrapper.account_summary_event.clear()
+            self.wrapper.account_summary.clear()
+            self.client.reqAccountSummary(9001, "All", "AccountType,NetLiquidation,TotalCashValue,SettledCash,AccruedCash,BuyingPower,EquityWithLoanValue,PreviousEquityWithLoanValue,GrossPositionValue,RegTEquity,RegTMargin,SMA,InitMarginReq,MaintMarginReq,AvailableFunds,ExcessLiquidity,Cushion,FullInitMarginReq,FullMaintMarginReq,FullAvailableFunds,FullExcessLiquidity,LookAheadNextChange,LookAheadInitMarginReq,LookAheadMaintMarginReq,LookAheadAvailableFunds,LookAheadExcessLiquidity,HighestSeverity,DayTradesRemaining,Leverage")
+            self.wrapper.account_summary_event.wait(timeout=10)
+            return self.wrapper.account_summary
 
-        for item in summary:
-            tag = item.tag
-            value = item.value
-            if value:
-                try:
-                    account_values[tag] = float(value)
-                except ValueError:
-                    pass
+        account_summary = await asyncio.to_thread(_get_account_summary)
 
-        managed_accounts = self.ib.managedAccounts()
-        account_id = self.account or (managed_accounts[0] if managed_accounts else "unknown")
+        account_id = self.account or (self.wrapper.managed_accounts[0] if self.wrapper.managed_accounts else "unknown")
+        account_data = account_summary.get(account_id, {})
+
+        def safe_float(value, default=0.0):
+            try:
+                return float(value) if value else default
+            except (ValueError, TypeError):
+                return default
+
+        # Try multiple fields for cash balance
+        cash_balance = safe_float(account_data.get('TotalCashValue') or account_data.get('SettledCash') or account_data.get('AccruedCash'))
+        portfolio_value = safe_float(account_data.get('NetLiquidation'))
+        buying_power = safe_float(account_data.get('BuyingPower'))
 
         return Account(
             account_id=account_id,
-            cash_balance=account_values.get('TotalCashBalance', 0.0),
-            portfolio_value=account_values.get('NetLiquidation', 0.0),
-            buying_power=account_values.get('BuyingPower', 0.0),
-            margin_available=account_values.get('AvailableFunds', 0.0),
-            total_pnl=account_values.get('RealizedPnL', 0.0),
-            daily_pnl=account_values.get('NetLiquidationByCurrency', 0.0) - account_values.get('PreviousEquityWithLoanValue', 0.0),
+            cash_balance=cash_balance,
+            portfolio_value=portfolio_value,
+            buying_power=buying_power,
+            margin_available=safe_float(account_data.get('AvailableFunds')),
+            total_pnl=safe_float(account_data.get('RealizedPnL')),
+            daily_pnl=0.0,
             currency=self.currency,
             positions=await self.get_positions()
         )
@@ -317,21 +499,33 @@ class IBKRBroker(BaseBroker):
         if not self.is_connected:
             raise ConnectionError("Not connected to IBKR")
 
-        contract = Stock(symbol, self.exchange, self.currency)
-        ticker = await self.ib.reqMktDataAsync(contract)
+        def _get_market_price():
+            contract = Contract()
+            contract.symbol = symbol
+            contract.secType = "STK"
+            contract.exchange = self.exchange
+            contract.currency = self.currency
 
-        await asyncio.sleep(self.market_data_timeout)
+            req_id = self._get_next_req_id()
+            self.wrapper.market_data[req_id] = {}
+            self.wrapper.market_data_event.clear()
 
-        price = ticker.marketPrice()
-        if price is None:
-            price = ticker.last
-        if price is None:
-            price = ticker.close
+            self.client.reqMktData(req_id, contract, "", False, False, [])
 
-        if price is None:
-            raise ValueError(f"Unable to get market price for {symbol}")
+            # Wait for data
+            time.sleep(1)
 
-        return float(price)
+            self.client.cancelMktData(req_id)
+
+            data = self.wrapper.market_data.get(req_id, {})
+            price = data.get("last") or data.get("close") or data.get("bid")
+
+            if price is None:
+                raise ValueError(f"Unable to get market price for {symbol}")
+
+            return float(price)
+
+        return await asyncio.to_thread(_get_market_price)
 
     async def validate_order(self, order: Order) -> Tuple[bool, str]:
         """Validate if an order can be placed."""
@@ -396,67 +590,8 @@ class IBKRBroker(BaseBroker):
         }
         return type_map.get(order_type, OrderType.MARKET)
 
-    def _setup_order_callbacks(self):
-        """Setup callbacks for order status updates."""
-        self.ib.orderStatusEvent += self._on_order_status
-        logger.info("Order callbacks registered")
-
-    def _on_order_status(self, trade):
-        """Handle order status updates from IBKR."""
-        if trade.orderStatus and trade.orderStatus.orderId:
-            order_id = str(trade.orderStatus.orderId)
-            ib_status = self._map_ib_order_status(trade.orderStatus.status)
-
-            if order_id in self._orders:
-                order = self._orders[order_id]
-                old_status = order.status
-                order.status = ib_status
-                order.filled_quantity = int(trade.orderStatus.filled)
-                order.avg_fill_price = float(trade.orderStatus.avgFillPrice) if trade.orderStatus.avgFillPrice else None
-
-                if trade.commissionReport():
-                    order.commission = float(trade.commissionReport().commission)
-
-                logger.info(f"Order {order_id} status updated: {old_status} -> {ib_status}")
-
-    def _setup_position_callbacks(self):
-        """Setup callbacks for position updates."""
-        self.ib.positionEvent += self._on_position_update
-        logger.info("Position callbacks registered")
-
-    def _on_position_update(self, position):
-        """Handle position updates."""
-        symbol = position.contract.symbol
-        quantity = position.position
-        logger.info(f"Position update for {symbol}: {quantity} shares")
-
-    def _setup_account_callbacks(self):
-        """Setup callbacks for account value updates."""
-        self.ib.accountValueEvent += self._on_account_update
-        logger.info("Account callbacks registered")
-
-    def _on_account_update(self, value):
-        """Handle account value updates."""
-        tag = value.tag
-        val = value.value
-        try:
-            self._account_values[tag] = float(val)
-            logger.debug(f"Account value update: {tag} = {val}")
-        except (ValueError, TypeError):
-            pass
-
     async def get_portfolio_summary(self) -> Dict[str, Any]:
-        """
-        Get portfolio summary including:
-        - total_value: Total portfolio value
-        - cash_balance: Available cash
-        - invested_value: Value of all positions
-        - buying_power: Available buying power
-        - margin_used: How much margin is used
-        - open_positions: Number of open positions
-        - daily_pnl: Today's P&L
-        - total_pnl: Total realized P&L
-        """
+        """Get portfolio summary."""
         if not self.is_connected:
             raise ConnectionError("Not connected to IBKR")
 
@@ -483,29 +618,37 @@ class IBKRBroker(BaseBroker):
         if not self.is_connected:
             raise ConnectionError("Not connected to IBKR")
 
-        contract = Stock(symbol, self.exchange, self.currency)
-        ticker = self.ib.reqMktData(contract)
-        self._tickers[symbol] = ticker
+        def _subscribe():
+            contract = Contract()
+            contract.symbol = symbol
+            contract.secType = "STK"
+            contract.exchange = self.exchange
+            contract.currency = self.currency
+
+            req_id = self._get_next_req_id()
+            self.client.reqMktData(req_id, contract, "", False, False, [])
+            return req_id
+
+        await asyncio.to_thread(_subscribe)
         logger.info(f"Subscribed to market data for {symbol}")
 
     def get_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get current quote for subscribed symbol."""
-        if symbol not in self._tickers:
-            logger.warning(f"No ticker data for {symbol}")
-            return None
-
-        ticker = self._tickers[symbol]
-        return {
-            "bid": ticker.bid,
-            "ask": ticker.ask,
-            "last": ticker.last,
-            "volume": ticker.volume,
-            "high": ticker.high,
-            "low": ticker.low,
-            "close": ticker.close,
-            "bid_size": ticker.bidSize,
-            "ask_size": ticker.askSize
-        }
+        # Find the request ID for this symbol
+        for req_id, data in self.wrapper.market_data.items():
+            if data:
+                return {
+                    "bid": data.get("bid"),
+                    "ask": data.get("ask"),
+                    "last": data.get("last"),
+                    "volume": data.get("volume"),
+                    "high": data.get("high"),
+                    "low": data.get("low"),
+                    "close": data.get("close"),
+                    "bid_size": data.get("bidSize"),
+                    "ask_size": data.get("askSize")
+                }
+        return None
 
     async def get_historical_bars(
         self,
@@ -516,30 +659,38 @@ class IBKRBroker(BaseBroker):
         use_rth: bool = True,
         end_date: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """
-        Get historical OHLCV bars for a symbol.
-
-        Returns list of dicts with:
-        - date: datetime
-        - open, high, low, close: float
-        - volume: int
-        - average: float
-        """
+        """Get historical OHLCV bars for a symbol."""
         if not self.is_connected:
             raise ConnectionError("Not connected to IBKR")
 
-        contract = Stock(symbol, self.exchange, self.currency)
+        def _get_historical_data():
+            contract = Contract()
+            contract.symbol = symbol
+            contract.secType = "STK"
+            contract.exchange = self.exchange
+            contract.currency = self.currency
 
-        bars = await self.ib.reqHistoricalDataAsync(
-            contract,
-            endDateTime=end_date or '',
-            durationStr=duration,
-            barSizeSetting=bar_size,
-            whatToShow=what_to_show,
-            useRTH=use_rth,
-            formatDate=1,
-            keepUpToDate=False
-        )
+            req_id = self._get_next_req_id()
+            self.wrapper.historical_data[req_id] = []
+            self.wrapper.historical_data_event.clear()
+
+            self.client.reqHistoricalData(
+                req_id,
+                contract,
+                end_date or "",
+                duration,
+                bar_size,
+                what_to_show,
+                1 if use_rth else 0,
+                1,
+                False,
+                []
+            )
+
+            self.wrapper.historical_data_event.wait(timeout=30)
+            return self.wrapper.historical_data.get(req_id, [])
+
+        bars = await asyncio.to_thread(_get_historical_data)
 
         result = []
         for bar in bars:
@@ -548,7 +699,10 @@ class IBKRBroker(BaseBroker):
                 try:
                     bar_date = datetime.strptime(bar_date, "%Y%m%d %H:%M:%S")
                 except ValueError:
-                    bar_date = datetime.strptime(bar_date.split()[0], "%Y%m%d")
+                    try:
+                        bar_date = datetime.strptime(bar_date.split()[0], "%Y%m%d")
+                    except:
+                        continue
 
             result.append({
                 "date": bar_date,
@@ -561,135 +715,3 @@ class IBKRBroker(BaseBroker):
             })
 
         return result
-
-    async def get_historical_bars_paginated(
-        self,
-        symbol: str,
-        start_date: datetime,
-        end_date: Optional[datetime] = None,
-        bar_size: str = "1 min"
-    ) -> List[Dict[str, Any]]:
-        """
-        Get historical data over extended period using pagination.
-        IBKR limits to ~1 week of 1-min data per request.
-        This method automatically makes multiple requests.
-        """
-        if not self.is_connected:
-            raise ConnectionError("Not connected to IBKR")
-
-        bars_list = []
-        dt = end_date.strftime("%Y%m%d-%H:%M:%S") if end_date else ''
-
-        while True:
-            bars = await self.ib.reqHistoricalDataAsync(
-                Stock(symbol, self.exchange, self.currency),
-                endDateTime=dt,
-                durationStr='10 D',
-                barSizeSetting=bar_size,
-                whatToShow='TRADES',
-                useRTH=True,
-                formatDate=1,
-                keepUpToDate=False
-            )
-
-            if not bars:
-                break
-
-            for bar in bars:
-                bar_date = bar.date
-                if isinstance(bar_date, str):
-                    try:
-                        bar_date = datetime.strptime(bar_date, "%Y%m%d %H:%M:%S")
-                    except ValueError:
-                        bar_date = datetime.strptime(bar_date.split()[0], "%Y%m%d")
-
-                bars_list.append({
-                    "date": bar_date,
-                    "open": bar.open,
-                    "high": bar.high,
-                    "low": bar.low,
-                    "close": bar.close,
-                    "volume": bar.volume,
-                    "average": bar.average
-                })
-
-                if bar_date <= start_date:
-                    dt = None
-                    break
-
-            if dt is None:
-                break
-
-            dt = bars[0].date
-            if isinstance(dt, datetime):
-                dt = dt.strftime("%Y%m%d-%H:%M:%S")
-
-        return sorted(bars_list, key=lambda x: x["date"])
-
-    async def subscribe_realtime_bars(
-        self,
-        symbol: str,
-        callback: Callable[[Dict], None]
-    ) -> None:
-        """
-        Subscribe to 5-second real-time bars.
-        Calls callback with each new bar.
-        """
-        if not self.is_connected:
-            raise ConnectionError("Not connected to IBKR")
-
-        contract = Stock(symbol, self.exchange, self.currency)
-
-        async def on_bar_update(bars, has_new_bar):
-            if has_new_bar and len(bars) > 0:
-                bar = bars[-1]
-                callback({
-                    "symbol": symbol,
-                    "date": bar.date,
-                    "open": bar.open,
-                    "high": bar.high,
-                    "low": bar.low,
-                    "close": bar.close,
-                    "volume": bar.volume,
-                    "average": bar.average
-                })
-
-        bars = await self.ib.reqRealTimeBarsAsync(contract, 5, 'TRADES', False)
-        bars.updateEvent += on_bar_update
-
-        self._realtime_bars[symbol] = (bars, callback)
-        logger.info(f"Subscribed to real-time bars for {symbol}")
-
-    def unsubscribe_realtime_bars(self, symbol: str) -> None:
-        """Unsubscribe from real-time bars."""
-        if symbol in self._realtime_bars:
-            bars, _ = self._realtime_bars[symbol]
-            self.ib.cancelRealTimeBars(bars)
-            del self._realtime_bars[symbol]
-            logger.info(f"Unsubscribed from real-time bars for {symbol}")
-
-    async def get_fundamental_data(
-        self,
-        symbol: str,
-        report_type: str = "ReportsFinSummary"
-    ) -> Optional[str]:
-        """
-        Get fundamental data (financial statements, ratios).
-
-        report_type options:
-        - 'ReportsFinSummary' - Financial summary
-        - 'ReportsOwnership' - Ownership details
-        - 'ReportSnapshot' - Company snapshot
-        - 'ReportsFinStatements' - Financial statements
-        """
-        if not self.is_connected:
-            raise ConnectionError("Not connected to IBKR")
-
-        contract = Stock(symbol, self.exchange, self.currency)
-
-        try:
-            data = await self.ib.reqFundamentalDataAsync(contract, report_type)
-            return data
-        except Exception as e:
-            logger.error(f"Failed to get fundamental data for {symbol}: {e}")
-            return None

@@ -1,0 +1,183 @@
+"""IBKR Integration Module for TradeMind.
+
+Provides synchronization between TradeMind and IB Gateway.
+"""
+import asyncio
+import logging
+from typing import Optional, Dict, List
+from datetime import datetime
+from sqlalchemy.orm import Session
+
+from src.config import settings
+from src.core.database import get_db, Holding, Trade, PortfolioSnapshot
+
+logger = logging.getLogger(__name__)
+
+
+class IBKRIntegration:
+    """Manages integration between TradeMind and IB Gateway."""
+    
+    _instance = None
+    _broker = None
+    _connected = False
+    _account_id: Optional[str] = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    @property
+    def is_connected(self) -> bool:
+        return self._connected and self._broker is not None
+    
+    @property
+    def broker(self):
+        return self._broker
+    
+    async def connect(self) -> bool:
+        """Connect to IB Gateway."""
+        if not settings.ibkr_enabled:
+            logger.info("IBKR integration disabled in settings")
+            return False
+        
+        if self._connected and self._broker:
+            return True
+        
+        try:
+            # Import here to avoid event loop issues
+            from src.brokers.ibkr.client import IBKRBroker
+            
+            self._broker = IBKRBroker(
+                host=settings.ibkr_host,
+                port=settings.ibkr_port,
+                client_id=settings.ibkr_client_id,
+                paper_trading=settings.ibkr_paper_trading
+            )
+            
+            # Don't connect here - do it lazily when needed
+            # This avoids event loop conflicts during startup
+            logger.info("✅ IBKR broker initialized (connection deferred)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ IBKR initialization error: {e}")
+            return False
+    
+    async def ensure_connected(self) -> bool:
+        """Ensure connection to IB Gateway (lazy connection)."""
+        if not settings.ibkr_enabled or not self._broker:
+            return False
+
+        if self._connected:
+            return True
+
+        try:
+            await self._broker.connect()
+            self._connected = True
+            logger.info(f"✅ Connected to IB Gateway on port {settings.ibkr_port}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ IBKR connection error: {e}")
+            return False
+    
+    async def disconnect(self):
+        """Disconnect from IB Gateway."""
+        if self._broker and self._connected:
+            await self._broker.disconnect()
+            self._connected = False
+            logger.info("🔌 Disconnected from IB Gateway")
+    
+    async def sync_portfolio(self, db: Session = None) -> Dict:
+        """Sync TradeMind portfolio with IB Gateway account."""
+        if not await self.ensure_connected():
+            logger.warning("Cannot sync - not connected to IB Gateway")
+            return {"success": False, "error": "Not connected"}
+        
+        should_close = db is None
+        if db is None:
+            db = next(get_db())
+        
+        try:
+            # Get IB account info
+            account = await self._broker.get_account()
+            
+            # Get IB positions
+            positions = await self._broker.get_positions()
+            
+            # Update portfolio snapshot
+            snapshot = PortfolioSnapshot(
+                timestamp=datetime.utcnow(),
+                total_value=account.portfolio_value,
+                cash_balance=account.cash_balance,
+                invested_value=account.portfolio_value - account.cash_balance,
+                daily_pnl=0.0,
+                total_return_pct=0.0
+            )
+            db.add(snapshot)
+            
+            # Sync holdings
+            db.query(Holding).delete()
+            
+            for pos in positions:
+                holding = Holding(
+                    symbol=pos.symbol,
+                    quantity=pos.quantity,
+                    avg_cost=pos.avg_cost,
+                    current_price=getattr(pos, 'market_price', pos.avg_cost),
+                    market_value=getattr(pos, 'market_value', pos.quantity * pos.avg_cost),
+                    unrealized_pnl=getattr(pos, 'unrealized_pnl', 0.0),
+                    stop_loss_pct=0.05,
+                    sector=None
+                )
+                db.add(holding)
+            
+            db.commit()
+            
+            logger.info(f"✅ Portfolio synced with IB Gateway")
+            logger.info(f"   Cash: ${account.cash_balance:,.2f}")
+            logger.info(f"   Positions: {len(positions)}")
+            
+            return {
+                "success": True,
+                "cash_balance": account.cash_balance,
+                "portfolio_value": account.portfolio_value,
+                "positions_count": len(positions)
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Portfolio sync error: {e}")
+            db.rollback()
+            return {"success": False, "error": str(e)}
+        finally:
+            if should_close:
+                db.close()
+    
+    async def get_account_summary(self) -> Optional[Dict]:
+        """Get account summary from IB Gateway."""
+        if not await self.ensure_connected():
+            return None
+        
+        try:
+            account = await self._broker.get_account()
+            return {
+                "account_id": account.account_id,
+                "cash_balance": account.cash_balance,
+                "portfolio_value": account.portfolio_value,
+                "buying_power": account.buying_power,
+                "daily_pnl": account.daily_pnl
+            }
+        except Exception as e:
+            logger.error(f"❌ Account summary error: {e}")
+            return None
+
+
+# Global instance - lazy initialization
+ibkr_integration = None
+
+def get_ibkr_integration():
+    """Get or create IBKR integration instance."""
+    global ibkr_integration
+    if ibkr_integration is None:
+        ibkr_integration = IBKRIntegration()
+    return ibkr_integration
