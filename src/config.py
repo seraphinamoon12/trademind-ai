@@ -174,9 +174,17 @@ class Settings(BaseSettings):
     ibkr_real_time_bars: bool = Field(default=False)
     ibkr_delayed_data: bool = Field(default=True)
 
+    # Database Environment Variables (for building connection string)
+    db_user: Optional[str] = Field(default=None)
+    db_password: Optional[str] = Field(default=None)
+    db_host: Optional[str] = Field(default=None)
+    db_port: Optional[str] = Field(default=None)
+    db_name: Optional[str] = Field(default=None)
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # Ignore extra fields not defined in Settings
 
 
 def load_ibkr_config(config_path: Optional[str] = None) -> dict:
