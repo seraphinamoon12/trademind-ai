@@ -296,6 +296,7 @@ class IBKRClientThread(threading.Thread):
         self.connected = threading.Event()
         self.running = threading.Event()
         self.connection_error = None
+        self._account_updates_subscribed = False
 
     def get_account_summary(self, req_id: int) -> Request:
         """Request account summary."""
@@ -339,6 +340,13 @@ class IBKRClientThread(threading.Thread):
 
     def stop(self) -> None:
         """Signal thread to stop."""
+        # Cancel account updates subscription if any
+        if self._account_updates_subscribed and self.wrapper.managed_accounts:
+            try:
+                account = self.wrapper.managed_accounts[0]
+                self.client.reqAccountUpdates(False, account)
+            except Exception:
+                pass
         self.running.clear()
         self.request_queue.put(None)
 
@@ -390,11 +398,17 @@ class IBKRClientThread(threading.Thread):
         try:
             if action == "get_account_summary":
                 req_id = request.data["req_id"]
-                # Use reqAccountUpdates instead - more reliable
+                # Cancel previous account updates subscription if any
+                if self._account_updates_subscribed:
+                    try:
+                        account = self.wrapper.managed_accounts[0] if self.wrapper.managed_accounts else ""
+                        self.client.reqAccountUpdates(False, account)
+                    except Exception:
+                        pass
+                # Request new account updates
                 account = self.wrapper.managed_accounts[0] if self.wrapper.managed_accounts else ""
                 self.client.reqAccountUpdates(True, account)
-                # Also request account summary for additional data
-                self.client.reqAccountSummary(req_id, "All", "$LEDGER")
+                self._account_updates_subscribed = True
 
             elif action == "get_positions":
                 self.wrapper.positions.clear()

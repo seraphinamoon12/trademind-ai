@@ -10,6 +10,7 @@ import asyncio
 from src.core.database import init_db, get_db
 from src.config import settings
 from src.api.routes import portfolio, trades, strategies, agent, safety, human_review, config
+from src.api.routes import ibkr_trading
 
 app = FastAPI(
     title=settings.app_name,
@@ -28,6 +29,7 @@ app.include_router(agent.router, prefix="/api/agent", tags=["agent"])
 app.include_router(safety.router, prefix="/api/safety", tags=["safety"])
 app.include_router(human_review.router, prefix="", tags=["human-review"])
 app.include_router(config.router, prefix="/api", tags=["config"])
+app.include_router(ibkr_trading.router, prefix="/api/ibkr", tags=["IBKR Trading"])
 
 
 @app.on_event("startup")
