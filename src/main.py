@@ -1,10 +1,11 @@
 """FastAPI application."""
-from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi import FastAPI, Request, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import os
+import asyncio
 
 from src.core.database import init_db, get_db
 from src.config import settings
@@ -36,6 +37,7 @@ async def startup_event():
     print(f"✅ {settings.app_name} started")
     print(f"   Mode: {settings.app_mode}")
     print(f"   Database: {settings.database_url}")
+    print(f"   IBKR: Enabled (connection on-demand)")
 
 
 @app.get("/", response_class=HTMLResponse)

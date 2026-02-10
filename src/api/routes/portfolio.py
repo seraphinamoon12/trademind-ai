@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 from typing import List, Dict
 
 from src.core.database import get_db
+from src.config import settings
 from src.portfolio.manager import PortfolioManager
 from src.data.providers import yahoo_provider
+from src.brokers.ibkr.integration import get_ibkr_integration
 
 router = APIRouter()
 
@@ -13,6 +15,29 @@ router = APIRouter()
 @router.get("/")
 async def get_portfolio(db: Session = Depends(get_db)):
     """Get current portfolio summary."""
+    # Try to connect to IB Gateway if enabled
+    if settings.ibkr_enabled:
+        try:
+            ibkr = get_ibkr_integration()
+            account_summary = await ibkr.get_account_summary()
+            if account_summary:
+                return {
+                    "portfolio": {
+                        "total_value": account_summary["portfolio_value"],
+                        "cash_balance": account_summary["cash_balance"],
+                        "invested_value": account_summary["portfolio_value"] - account_summary["cash_balance"],
+                        "total_return_pct": 0.0,
+                        "daily_pnl": account_summary.get("daily_pnl", 0),
+                        "daily_pnl_pct": 0.0
+                    },
+                    "holdings": {},
+                    "source": "ib_gateway"
+                }
+        except Exception as e:
+            # Fall back to internal DB
+            pass
+    
+    # Fall back to internal database
     pm = PortfolioManager()
     portfolio = pm.get_portfolio_value(db)
     holdings = pm.get_holdings(db)
@@ -26,7 +51,8 @@ async def get_portfolio(db: Session = Depends(get_db)):
     
     return {
         "portfolio": portfolio,
-        "holdings": holdings
+        "holdings": holdings,
+        "source": "internal"
     }
 
 
@@ -76,3 +102,70 @@ async def get_performance(days: int = 30, db: Session = Depends(get_db)):
             for s in snapshots
         ]
     }
+
+
+@router.post("/sync")
+async def sync_with_ibkr(db: Session = Depends(get_db)):
+    """Manually sync portfolio with IB Gateway."""
+    if not settings.ibkr_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="IBKR integration disabled"
+        )
+    
+    try:
+        ibkr = get_ibkr_integration()
+        result = await ibkr.sync_portfolio(db)
+        
+        if result.get("success"):
+            return {
+                "status": "success",
+                "message": "Portfolio synced with IB Gateway",
+                "cash_balance": result["cash_balance"],
+                "portfolio_value": result["portfolio_value"],
+                "positions_count": result["positions_count"]
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Sync failed: {result.get('error', 'Unknown error')}"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error: {str(e)}"
+        )
+
+
+@router.get("/account")
+async def get_account_info():
+    """Get IB Gateway account information."""
+    if not settings.ibkr_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="IBKR integration disabled"
+        )
+    
+    try:
+        ibkr = get_ibkr_integration()
+        account = await ibkr.get_account_summary()
+        
+        if account:
+            return {
+                "status": "connected",
+                "account": account
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to get account info"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error: {str(e)}"
+        )

@@ -4,6 +4,7 @@ Provides synchronization between TradeMind and IB Gateway.
 """
 import asyncio
 import logging
+import threading
 from typing import Optional, Dict, List
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -16,15 +17,18 @@ logger = logging.getLogger(__name__)
 
 class IBKRIntegration:
     """Manages integration between TradeMind and IB Gateway."""
-    
+
     _instance = None
+    _lock = threading.Lock()
     _broker = None
     _connected = False
     _account_id: Optional[str] = None
-    
+
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
         return cls._instance
     
     @property
@@ -45,29 +49,35 @@ class IBKRIntegration:
             return True
         
         try:
-            # Import here to avoid event loop issues
-            from src.brokers.ibkr.client import IBKRBroker
-            
-            self._broker = IBKRBroker(
+            # Import the new threaded broker
+            from src.brokers.ibkr.async_broker import IBKRThreadedBroker
+
+            self._broker = IBKRThreadedBroker(
                 host=settings.ibkr_host,
                 port=settings.ibkr_port,
                 client_id=settings.ibkr_client_id,
                 paper_trading=settings.ibkr_paper_trading
             )
-            
+
             # Don't connect here - do it lazily when needed
             # This avoids event loop conflicts during startup
-            logger.info("✅ IBKR broker initialized (connection deferred)")
+            logger.info("✅ IBKR threaded broker initialized (connection deferred)")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ IBKR initialization error: {e}")
             return False
     
     async def ensure_connected(self) -> bool:
         """Ensure connection to IB Gateway (lazy connection)."""
-        if not settings.ibkr_enabled or not self._broker:
+        if not settings.ibkr_enabled:
             return False
+
+        # Initialize broker if not already done
+        if not self._broker:
+            await self.connect()
+            if not self._broker:
+                return False
 
         if self._connected:
             return True
@@ -116,9 +126,11 @@ class IBKRIntegration:
             )
             db.add(snapshot)
             
-            # Sync holdings
-            db.query(Holding).delete()
-            
+            # Sync holdings - only delete holdings that exist in IB positions
+            # Get current IB symbols to identify which holdings to delete
+            ib_symbols = {pos.symbol for pos in positions}
+            db.query(Holding).filter(Holding.symbol.in_(ib_symbols)).delete(synchronize_session=False)
+
             for pos in positions:
                 holding = Holding(
                     symbol=pos.symbol,
