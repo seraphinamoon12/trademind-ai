@@ -4,6 +4,8 @@ import logging
 from datetime import datetime, timedelta
 import time
 
+import pandas as pd
+
 from src.market_mood.data_providers.base import BaseDataProvider
 from src.market_mood.data_providers.cache import market_mood_cache
 from src.market_mood.models import (
@@ -404,7 +406,3 @@ class FREDProvider(BaseDataProvider):
                 logger.warning(f"Failed to fetch {indicator_type}: {e}")
         
         return indicators
-
-
-# Import pandas for NaN check
-import pandas as pd
