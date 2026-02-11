@@ -1,7 +1,7 @@
 """API tests for Market Mood Phase 3."""
 import pytest
 from unittest.mock import Mock, patch, AsyncMock
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

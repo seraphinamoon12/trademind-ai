@@ -33,6 +33,7 @@ from src.trading_graph.persistence import get_checkpointer
 from src.trading_graph.nodes.data_nodes import fetch_market_data
 from src.trading_graph.nodes.analysis_nodes import technical_analysis, sentiment_analysis, make_decision
 from src.trading_graph.nodes.execution_nodes import risk_assessment, execute_trade, retry_node
+from src.trading_graph.nodes.market_mood_node import market_mood_analysis
 from src.trading_graph.nodes.debate_nodes import debate_protocol
 from src.trading_graph.nodes.human_review_nodes import human_review
 from src.trading_graph.validation import get_utc_now
@@ -137,6 +138,7 @@ async def create_trading_graph() -> Any:
 
     # ========== ADD NODES ==========
     graph.add_node("fetch_data", fetch_market_data)
+    graph.add_node("market_mood", market_mood_analysis)
     graph.add_node("technical", technical_analysis)
     graph.add_node("sentiment", sentiment_analysis)
     graph.add_node("debate", debate_protocol)
@@ -157,14 +159,25 @@ async def create_trading_graph() -> Any:
         "fetch_data",
         route_error,
         {
-            "continue": "technical",  # Start parallel analysis
+            "continue": "market_mood",  # Start parallel analysis
             "retry": "retry",        # Retry via retry node
             "end": END                # Give up
         }
     )
 
-    # Parallel analysis: fetch_data → technical & sentiment (both run concurrently)
+    # Parallel analysis: fetch_data → market_mood, technical & sentiment (all run concurrently)
     graph.add_edge("fetch_data", "sentiment")
+    graph.add_edge("fetch_data", "technical")
+
+    # Flow: market_mood → conditional: debate or skip
+    graph.add_conditional_edges(
+        "market_mood",
+        should_debate,
+        {
+            "debate": "debate",
+            "skip_debate": "risk"
+        }
+    )
 
     # Flow: technical & sentiment → conditional: debate or skip
     graph.add_conditional_edges(

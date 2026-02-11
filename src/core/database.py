@@ -275,7 +275,7 @@ class MoodIndicatorValue(Base):
     value = Column(Numeric(10, 4))
     score = Column(Numeric(6, 2))
     trend = Column(String(20))
-    metadata = Column(JSONB)
+    indicator_metadata = Column(JSONB)
 
     def __repr__(self):
         return f"<MoodIndicatorValue({self.indicator_type}: {self.score:.1f})>"

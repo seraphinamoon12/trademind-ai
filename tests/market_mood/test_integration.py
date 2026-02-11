@@ -19,7 +19,6 @@ from src.trading_graph.state import TradingState
 from src.core.database import MoodHistory, MoodSignal, MoodIndicatorValue, get_db
 from src.market_mood.models import IndicatorType, IndicatorValue, MoodScore
 from src.market_mood.detector import MarketMoodDetector
-from src.market_mood.config import MarketMoodConfig
 from src.config import settings
 
 
@@ -413,7 +412,7 @@ class TestDatabaseOperations:
             value=12.5,
             score=80.0,
             trend="improving",
-            metadata={"previous": 15.0, "change": -2.5}
+            indicator_metadata={"previous": 15.0, "change": -2.5}
         )
 
         db_session.add(indicator_value)

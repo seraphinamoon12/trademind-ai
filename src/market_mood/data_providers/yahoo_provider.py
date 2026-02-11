@@ -1,5 +1,5 @@
 """Yahoo Finance data provider for market mood indicators."""
-from typing import Optional, List
+from typing import Optional, List, Any
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -16,6 +16,7 @@ from src.market_mood.models import (
     MATrendData,
 )
 from src.market_mood.exceptions import DataProviderError
+from src.market_mood.config import MarketMoodConfig
 
 logger = logging.getLogger(__name__)
 
