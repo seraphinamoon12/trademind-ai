@@ -9,6 +9,10 @@ from .models import IndicatorValue, MoodScore, CacheEntry
 from .data_providers.base import BaseDataProvider
 from .data_providers.yahoo_provider import YahooFinanceProvider
 from .data_providers.fred_provider import FREDProvider
+from .engine import MoodCalculationEngine
+from .signals import SignalGenerator
+from .trends import TrendDetector
+from .detector import MarketMoodDetector
 
 __all__ = [
     'MarketMoodConfig',
@@ -18,4 +22,8 @@ __all__ = [
     'BaseDataProvider',
     'YahooFinanceProvider',
     'FREDProvider',
+    'MoodCalculationEngine',
+    'SignalGenerator',
+    'TrendDetector',
+    'MarketMoodDetector',
 ]
