@@ -1,6 +1,14 @@
-"""Async broker wrapper around the threaded IBKR client."""
+"""Async broker wrapper around the threaded IBKR client.
+
+DEPRECATED: This broker implementation is deprecated and will be removed in v2.0.
+Please use IBKRInsyncBroker (ib_insync-based) instead.
+
+To switch to the new broker, ensure ibkr_use_insync=True in your configuration.
+See docs/MIGRATION_TO_IB_INSYNC.md for migration guide.
+"""
 import asyncio
 import os
+import warnings
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 import logging
@@ -22,7 +30,11 @@ logger = logging.getLogger(__name__)
 
 
 class IBKRThreadedBroker(BaseBroker):
-    """Async broker wrapper using threaded IBKR client."""
+    """Async broker wrapper using threaded IBKR client.
+
+    DEPRECATED: This broker is deprecated and will be removed in v2.0.
+    Use IBKRInsyncBroker (ib_insync-based) for better performance and stability.
+    """
 
     def __init__(
         self,
@@ -32,6 +44,16 @@ class IBKRThreadedBroker(BaseBroker):
         account: Optional[str] = None,
         paper_trading: bool = True
     ):
+        warnings.warn(
+            "IBKRThreadedBroker is deprecated. Use IBKRInsyncBroker instead. "
+            "This class will be removed in v2.0. Set ibkr_use_insync=True to use the new broker.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        logger.warning(
+            "[DEPRECATED] Using IBKRThreadedBroker. "
+            "Set ibkr_use_insync=True to use IBKRInsyncBroker instead."
+        )
         super().__init__()
         self.host = host
         self.port = port

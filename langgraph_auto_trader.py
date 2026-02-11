@@ -11,6 +11,7 @@ import asyncio
 import sys
 import time
 import signal
+import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
@@ -20,6 +21,13 @@ from src.trading_graph.graph import create_trading_graph
 from src.trading_graph.state import TradingState
 from src.position_manager import PositionManager
 from src.config import settings
+
+logger = logging.getLogger(__name__)
+
+# Check if using recommended ib_insync broker
+if hasattr(settings, 'ibkr_use_insync') and not settings.ibkr_use_insync:
+    logger.warning("Auto-trader works best with ib_insync broker (ibkr_use_insync=True). "
+                   "Consider enabling it for better performance and stability.")
 
 # Watchlist - updated with diversification recommendations
 WATCHLIST = [

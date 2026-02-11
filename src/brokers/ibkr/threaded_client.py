@@ -1,7 +1,15 @@
-"""Thread-based IBKR client implementation with proper async integration."""
+"""Thread-based IBKR client implementation with proper async integration.
+
+DEPRECATED: This implementation is deprecated and will be removed in v2.0.
+Please use the ib_insync-based broker (IBKRInsyncBroker) instead.
+
+To switch to the new broker, ensure ibkr_use_insync=True in your configuration.
+See docs/MIGRATION_TO_IB_INSYNC.md for migration guide.
+"""
 import asyncio
 import threading
 import queue
+import warnings
 from typing import Optional, Dict, Any
 import logging
 from dataclasses import dataclass, field
@@ -315,9 +323,23 @@ class RequestManager:
 
 
 class IBKRClientThread(threading.Thread):
-    """Thread that runs IB API client and handles requests from main thread."""
+    """Thread that runs IB API client and handles requests from main thread.
+
+    DEPRECATED: This implementation is deprecated and will be removed in v2.0.
+    Use ib_insync-based broker (IBKRInsyncBroker) instead.
+    """
 
     def __init__(self, host: str, port: int, client_id: int) -> None:
+        warnings.warn(
+            "IBKRClientThread is deprecated. Use ib_insync library (IBKRInsyncBroker) instead. "
+            "This class will be removed in v2.0. Set ibkr_use_insync=True to use the new broker.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        logger.warning(
+            "[DEPRECATED] Using IBKRClientThread. "
+            "Set ibkr_use_insync=True to use IBKRInsyncBroker instead."
+        )
         logger.debug(f"IBKRClientThread.__init__() called: host={host}, port={port}, client_id={client_id}")
         super().__init__(daemon=True, name="IBKRClientThread")
         self.host = host

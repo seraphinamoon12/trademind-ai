@@ -69,6 +69,17 @@ class IBKRInsyncBroker(BaseBroker):
         self._failure_count = 0
         self._last_failure_time: Optional[float] = None
 
+        # Metrics collection
+        self._metrics: Dict[str, Any] = {
+            'connections': 0,
+            'reconnections': 0,
+            'failures': 0,
+            'orders_placed': 0,
+            'orders_successful': 0,
+            'avg_connect_time_ms': 0.0,
+            'last_connect_time': None
+        }
+
         logger.info(
             f"IBKRInsyncBroker initialized: host={self._host}, "
             f"port={self._port}, client_id={self._client_id}, "
@@ -86,6 +97,7 @@ class IBKRInsyncBroker(BaseBroker):
                 raise ConnectionError("Circuit breaker is OPEN - rejecting connection attempt")
 
             logger.info(f"Connecting to IB Gateway at {self._host}:{self._port}")
+            start_time = time.time()
             try:
                 await self._ib.connectAsync(
                     host=self._host,
@@ -103,6 +115,18 @@ class IBKRInsyncBroker(BaseBroker):
 
                 self._connected = True
                 self._reset_circuit_breaker()
+
+                # Update metrics
+                self._metrics['connections'] += 1
+                self._metrics['last_connect_time'] = datetime.now(timezone.utc).isoformat()
+                connect_time_ms = (time.time() - start_time) * 1000
+                if self._metrics['connections'] == 1:
+                    self._metrics['avg_connect_time_ms'] = connect_time_ms
+                else:
+                    self._metrics['avg_connect_time_ms'] = (
+                        (self._metrics['avg_connect_time_ms'] * (self._metrics['connections'] - 1) + connect_time_ms)
+                        / self._metrics['connections']
+                    )
 
                 if self._account:
                     logger.info(f"Connected to IB Gateway, account: {self._account}")
@@ -272,10 +296,16 @@ class IBKRInsyncBroker(BaseBroker):
             trade = self._ib.placeOrder(contract, ib_order)
             order_id = str(trade.order.orderId)
 
+            # Update metrics
+            self._metrics['orders_placed'] += 1
+            self._metrics['orders_successful'] += 1
+
             logger.info(f"Order placed: {order_id}")
             return order_id
 
         except Exception as e:
+            # Update metrics for failed order
+            self._metrics['orders_placed'] += 1
             logger.error(f"Error placing order: {e}")
             raise
 
@@ -546,6 +576,15 @@ class IBKRInsyncBroker(BaseBroker):
             logger.warning("Connection lost, attempting to reconnect")
             await self._reconnect()
 
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get current metrics for monitoring.
+
+        Returns:
+            Dictionary of current metrics including connection stats,
+            reconnection counts, failure counts, and order statistics.
+        """
+        return self._metrics.copy()
+
     def _check_circuit_breaker(self) -> bool:
         """Check if connection attempt is allowed based on circuit breaker state.
 
@@ -580,6 +619,9 @@ class IBKRInsyncBroker(BaseBroker):
 
         self._failure_count += 1
         self._last_failure_time = time.monotonic()
+
+        # Update metrics
+        self._metrics['failures'] += 1
 
         logger.warning(
             f"Connection failure #{self._failure_count} recorded "
@@ -640,6 +682,8 @@ class IBKRInsyncBroker(BaseBroker):
                 if self._ib.isConnected():
                     self._connected = True
                     self._reset_circuit_breaker()
+                    # Update metrics
+                    self._metrics['reconnections'] += 1
                     logger.info(f"Successfully reconnected to IB Gateway (attempt {attempt + 1})")
                     return
                 else:
