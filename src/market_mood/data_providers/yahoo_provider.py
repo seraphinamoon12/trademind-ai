@@ -255,14 +255,15 @@ class YahooFinanceProvider(BaseDataProvider):
         Returns:
             IndicatorValue with MA trend score
         """
+        # Fix: Move None check outside nested function to avoid scoping issue
+        if symbols is None:
+            symbols = [self.SPY_SYMBOL]
+        
         cache_key = self.get_cache_key(IndicatorType.MA_TRENDS, symbols=symbols)
         
         def fetch_ma_data():
             try:
                 time.sleep(self.config.yahoo_rate_limit_delay)
-                
-                if symbols is None:
-                    symbols = [self.SPY_SYMBOL]
                 
                 total_score = 0.0
                 count = 0
@@ -281,26 +282,26 @@ class YahooFinanceProvider(BaseDataProvider):
                     current_price = float(latest['Close'])
                     
                     # Calculate 50-day and 200-day MAs
-                    ma50 = hist['Close'].rolling(window=50).mean().iloc[-1]
-                    ma200 = hist['Close'].rolling(window=200).mean().iloc[-1]
+                    ma50 = float(hist['Close'].rolling(window=50).mean().iloc[-1])
+                    ma200 = float(hist['Close'].rolling(window=200).mean().iloc[-1])
                     
                     # Calculate slopes
                     if len(hist) >= 20:
-                        ma50_slope = (hist['Close'].iloc[-1] - hist['Close'].iloc[-20]) / 20
-                        ma200_slope = (hist['Close'].iloc[-1] - hist['Close'].iloc[-50]) / 50
+                        ma50_slope = float((hist['Close'].iloc[-1] - hist['Close'].iloc[-20]) / 20)
+                        ma200_slope = float((hist['Close'].iloc[-1] - hist['Close'].iloc[-50]) / 50)
                     else:
-                        ma50_slope = 0
-                        ma200_slope = 0
+                        ma50_slope = 0.0
+                        ma200_slope = 0.0
                     
                     ma_data = MATrendData(
                         symbol=symbol,
                         price_above_50ma=current_price > ma50,
                         price_above_200ma=current_price > ma200,
-                        ma50_slope=float(ma50_slope),
-                        ma200_slope=float(ma200_slope),
+                        ma50_slope=ma50_slope,
+                        ma200_slope=ma200_slope,
                     )
                     
-                    score = ma_data.get_trend_score()
+                    score = float(ma_data.get_trend_score())
                     total_score += score
                     count += 1
                     
@@ -312,7 +313,7 @@ class YahooFinanceProvider(BaseDataProvider):
                 if count == 0:
                     return None
                 
-                avg_score = total_score / count
+                avg_score = float(total_score / count)
                 
                 return IndicatorValue(
                     indicator_type=IndicatorType.MA_TRENDS,
