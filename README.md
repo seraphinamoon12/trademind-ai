@@ -4,14 +4,24 @@ An AI-powered autonomous trading system with rule-based strategies (RSI Mean Rev
 
 ## What's New
 
-### IBKR ib_insync Broker (v2.0 Default)
-- **New Default Broker**: The `ib_insync`-based broker (`IBKRInsyncBroker`) is now the default
-- **Performance Improvements**: ~40% lower memory footprint, cleaner async integration
-- **Better Reliability**: Built-in circuit breaker and automatic reconnection
-- **Old Broker Deprecated**: Threaded broker deprecated, will be removed in v2.0
-- **Easy Migration**: Set `IBKR_USE_INSYNC=true` (already default)
+### 🎉 ib_insync Broker Migration Complete (v2.0)
 
-See [docs/MIGRATION_TO_IB_INSYNC.md](docs/MIGRATION_TO_IB_INSYNC.md) for migration guide.
+**✅ Migration Status: Complete**
+
+The ib_insync-based broker (`IBKRInsyncBroker`) is now the **default and only** broker implementation.
+
+**Key Improvements:**
+- **Performance**: ~40% lower memory footprint, cleaner async integration
+- **Reliability**: Built-in circuit breaker and automatic reconnection
+- **Architecture**: Native async/await (no threading complexity)
+- **Monitoring**: Comprehensive metrics and health tracking
+- **Code Simplicity**: Reduced from ~800 lines to ~400 lines
+
+**Old Threaded Broker:** Removed in v2.0 (no longer supported)
+
+**Configuration:** No changes needed - `ib_insync` is already the default
+
+See [docs/MIGRATION_TO_IB_INSYNC.md](docs/MIGRATION_TO_IB_INSYNC.md) for migration details (historical reference).
 
 ## Features
 
@@ -26,6 +36,7 @@ See [docs/MIGRATION_TO_IB_INSYNC.md](docs/MIGRATION_TO_IB_INSYNC.md) for migrati
 - **Risk Management**: Position sizing, stop losses, drawdown limits
 - **Command Line Interface**: Full CLI for server management, backtesting, and monitoring
 - **LangGraph Orchestration**: Advanced multi-agent workflow with debate protocol and human-in-the-loop
+- **IB Gateway Integration**: Native async ib_insync broker with circuit breaker (v2.0)
 
 ## Architecture
 
@@ -45,18 +56,18 @@ See [docs/MIGRATION_TO_IB_INSYNC.md](docs/MIGRATION_TO_IB_INSYNC.md) for migrati
 │ Portfolio    │  │  Execution   │  │   FastAPI    │  │     CLI      │
 │ Manager      │  │   Engine     │  │   + HTMX     │  │  Interface   │
 └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
+                                   │
+                                   ▼
+                         ┌─────────────────┐
+                         │  IBKR Broker     │
+                         │  (ib_insync)    │
+                         └────────┬─────────┘
                                   │
                                   ▼
-                        ┌─────────────────┐
-                        │  IBKR Broker     │
-                        │ (ib_insync/NEW) │
-                        └────────┬─────────┘
-                                 │
-                                 ▼
-                        ┌─────────────────┐
-                        │  IB Gateway     │
-                        │   (Live/Paper)  │
-                        └─────────────────┘
+                         ┌─────────────────┐
+                         │  IB Gateway     │
+                         │   (Live/Paper)  │
+                         └─────────────────┘
 ```
 
 ## LangGraph Integration (NEW)
@@ -69,7 +80,7 @@ TradeMind AI now uses LangGraph for advanced multi-agent orchestration.
 ┌─────────┐    ┌──────────────┐    ┌──────────────────┐
 │  START  │───▶│  Fetch Data  │───▶│ Technical Analysis│
 └─────────┘    └──────────────┘    └────────┬─────────┘
-                                             │
+                                              │
                     ┌───────────────────────┘
                     ▼
           ┌──────────────────────┐
@@ -91,8 +102,8 @@ TradeMind AI now uses LangGraph for advanced multi-agent orchestration.
           │   Decision Node     │
           └────────┬─────────────┘
                    │
-        ┌──────────┴──────────┐
-        ▼                      ▼
+         ┌──────────┴──────────┐
+         ▼                      ▼
 ┌───────────────┐      ┌───────────────┐
 │ Human Review  │      │ Auto-Approve  │
 │ (low conf)    │      │ (high conf)   │
@@ -148,71 +159,67 @@ result = await graph.ainvoke({
 
 See `docs/LANGGRAPH_MIGRATION_GUIDE.md` for complete documentation.
 
-## IB Gateway Integration (NEW)
+## IB Gateway Integration
 
-TradeMind AI now provides full integration with Interactive Brokers Gateway for live and paper trading.
+TradeMind AI provides full integration with Interactive Brokers Gateway for live and paper trading using the native async **ib_insync** library.
 
 ### Architecture Overview
 
 ```
 FastAPI (Async) ─────────────────────────────────────────────┐
       │                                                       │
-      │ async methods                                         │
+      │ async/await (native)                                 │
       ▼                                                       │
 ┌──────────────────────┐        ┌──────────────────────┐      │
-│  IBKRThreadedBroker  │────────│  Request (via queue)│──────┤
-│    (Async Wrapper)   │        └──────────────────────┘      │
-│                      │                                    ┌──┴───┐
-├──────────────────────┤                                    │      │
-│ - place_order()      │        ┌──────────────────────┐    │Thread │
-│ - get_account()      │◀───────│  IBKRClientThread    │────┤  Q    │
-│ - get_positions()    │        │  (Synchronous IB API)│    │      │
+│  IBKRInsyncBroker    │────────│  Circuit Breaker     │──────┤
+│    (ib_insync)       │        │  + Auto-Reconnect    │      │
+│                      │        └──────────────────────┘      │
+├──────────────────────┤                                    ┌──┴───┐
+│ - place_order()      │        ┌──────────────────────┐    │ Async │
+│ - get_account()      │◀───────│  ib_insync IB()      │────┤ Call  │
+│ - get_positions()    │        │  (Native Async)      │    │      │
 │ - cancel_order()     │        └──────────┬───────────┘    └──────┘
 └──────────────────────┘                   │
-                                          │ IB API Calls
-                                          ▼
-                                ┌──────────────────────┐
-                                │   IBKRWrapper        │
-                                │   (Callbacks)        │
-                                └──────────┬───────────┘
-                                           │
-                              ┌────────────┴────────────┐
-                              │    IB Gateway           │
-                              │   (127.0.0.1:7497)     │
-                              └─────────────────────────┘
+                                           │ IB API Calls (Async)
+                                           ▼
+                                 ┌──────────────────────┐
+                                 │   IB Gateway         │
+                                 │   (127.0.0.1:7497)   │
+                                 └───────────────────────┘
 ```
 
 ### IBKR Broker Architecture
 
-TradeMind supports two IBKR broker implementations:
+#### IBKRInsyncBroker (v2.0 - Default & Only)
 
-#### New Broker: IBKRInsyncBroker (Recommended)
-- Uses `ib_insync` library for native async integration
-- Clean async/await code (no threading complexity)
-- Built-in reconnection with circuit breaker
-- Lower memory footprint (~40% reduction)
-- Better FastAPI integration
+TradeMind uses the native async **ib_insync** broker implementation:
 
-#### Old Broker: IBKRThreadedBroker (Deprecated)
-- Thread-based implementation using `ibapi`
-- Still functional but deprecated (removal in v2.0)
-- Can be enabled by setting `IBKR_USE_INSYNC=false`
+- **File**: `src/brokers/ibkr/ibkr_insync_broker.py`
+- **Library**: `ib_insync` (async wrapper around IB API)
+- **Key Features**:
+  - Native async/await code (no threading complexity)
+  - Built-in circuit breaker for resilience
+  - Auto-reconnection with exponential backoff
+  - Lower memory footprint (~40% reduction vs threaded broker)
+  - Comprehensive metrics and health tracking
+  - Clean FastAPI integration
 
-**Default**: IBKRInsyncBroker is enabled by default (`ibkr_use_insync=True`)
+**Old Threaded Broker:** Removed in v2.0 (no longer supported)
 
 ### Key Components
 
-#### 1. IBKRInsyncBroker (`src/brokers/ibkr/ibkr_insync_broker.py`) [NEW - Recommended]
+#### 1. IBKRInsyncBroker (`src/brokers/ibkr/ibkr_insync_broker.py`)
 
 - **IBKRInsyncBroker**: Native async broker using `ib_insync`
-- **Circuit Breaker**: Automatic protection against connection storms
-- **Auto-Reconnection**: Configurable retry logic with exponential backoff
+- **CircuitBreaker**: Automatic protection against connection storms
+- **AutoReconnect**: Configurable retry logic with exponential backoff
+- **BrokerMetrics**: Request tracking and performance monitoring
 - **Lazy Connection**: Connects on first use, not during startup
 
 #### 2. Integration Layer (`src/brokers/ibkr/integration.py`)
 
 - **IBKRIntegration**: Singleton pattern for global IBKR access
-- **Broker Selection**: Automatically selects appropriate broker based on `ibkr_use_insync`
+- **Broker Selection**: Always uses IBKRInsyncBroker
 - **Lazy Connection**: Connects only when needed
 - **Portfolio Synchronization**: Syncs with database automatically
 
@@ -221,11 +228,6 @@ TradeMind supports two IBKR broker implementations:
 - **BaseBroker**: Common interface for all broker implementations
 - Ensures consistent API across different brokers
 
-#### 4. Old Threaded Client (`src/brokers/ibkr/threaded_client.py`, `async_broker.py`) [DEPRECATED]
-
-- Still functional but deprecated (will be removed in v2.0)
-- Use `ib_insync`-based broker instead
-
 ### Configuration
 
 #### Environment Variables
@@ -233,10 +235,6 @@ TradeMind supports two IBKR broker implementations:
 ```bash
 # Enable IBKR integration
 IBKR_ENABLED=true
-
-# Broker selection (NEW)
-IBKR_USE_INSYNC=true  # Use ib_insync broker (recommended, default)
-# IBKR_USE_INSYNC=false  # Use old threaded broker (deprecated)
 
 # Connection settings
 IBKR_HOST=127.0.0.1
@@ -247,14 +245,14 @@ IBKR_ACCOUNT=U1234567
 # Trading mode
 IBKR_PAPER_TRADING=true  # true for paper, false for live
 
-# Insync broker settings (NEW)
+# Insync broker settings
 IBKR_INSYNC_RECONNECT_ENABLED=true
 IBKR_INSYNC_MAX_RECONNECT_ATTEMPTS=5
 IBKR_INSYNC_RECONNECT_BACKOFF=5
 IBKR_INSYNC_CONNECT_TIMEOUT=10
 IBKR_INSYNC_LAZY_CONNECT=true
 
-# Circuit breaker settings (NEW)
+# Circuit breaker settings
 IBKR_CIRCUIT_BREAKER_ENABLED=true
 IBKR_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
 IBKR_CIRCUIT_BREAKER_COOLDOWN_SECONDS=60
@@ -303,13 +301,27 @@ market_data:
 
 ### Setup Instructions
 
-#### 1. Install IB Gateway
+#### 1. Install Dependencies
+
+The ib_insync library is required:
+
+```bash
+# Install ib_insync
+pip install ib_insync
+
+# Or install all requirements
+pip install -r requirements.txt
+```
+
+**Note:** The old `ibapi` library is no longer required and has been removed from dependencies.
+
+#### 2. Install IB Gateway
 
 Download IB Gateway from Interactive Brokers:
 - macOS/Linux: `~/ibgateway/`
 - Windows: `C:\Jts\`
 
-#### 2. Configure IB Gateway
+#### 3. Configure IB Gateway
 
 **First-time setup:**
 1. Start IB Gateway and login with IBKR credentials
@@ -320,7 +332,7 @@ Download IB Gateway from Interactive Brokers:
    - Uncheck "Read-Only API" to allow trading
 4. Click OK and restart IB Gateway
 
-#### 3. Verify Connection
+#### 4. Verify Connection
 
 ```bash
 # Quick test using ib_insync
@@ -334,7 +346,7 @@ ib.disconnect()
 "
 ```
 
-#### 4. Enable IBKR in TradeMind
+#### 5. Enable IBKR in TradeMind
 
 ```bash
 # Set environment variables
@@ -357,22 +369,30 @@ IBKR_PAPER_TRADING=true
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/ibkr/status` | Check IBKR connection status and broker type |
+| GET | `/api/ibkr/status` | Check IBKR connection status |
 | POST | `/api/ibkr/connect` | Connect to IBKR Gateway |
 | POST | `/api/ibkr/disconnect` | Disconnect from IBKR |
 | GET | `/api/ibkr/account` | Get account summary |
 | GET | `/api/ibkr/positions` | Get current positions |
 | GET | `/api/ibkr/orders` | Get open orders |
+| GET | `/api/ibkr/metrics` | Get broker metrics |
 | POST | `/api/ibkr/sync` | Sync portfolio with IBKR |
 
-**Response includes broker type:**
+**Response example:**
 ```json
 {
   "enabled": true,
   "connected": true,
   "paper_trading": true,
   "broker_type": "ib_insync",
-  "mode": "paper"
+  "mode": "paper",
+  "metrics": {
+    "total_requests": 150,
+    "success_rate": 0.993,
+    "avg_latency_ms": 245.5,
+    "circuit_breaker_trips": 0,
+    "reconnection_attempts": 1
+  }
 }
 ```
 
@@ -387,6 +407,9 @@ curl http://localhost:8000/api/ibkr/account
 
 # Get positions
 curl http://localhost:8000/api/ibkr/positions
+
+# Get broker metrics
+curl http://localhost:8000/api/ibkr/metrics
 
 # Sync portfolio with IBKR
 curl -X POST http://localhost:8000/api/ibkr/sync
@@ -423,21 +446,19 @@ pytest tests/brokers/ -v -m integration
 
 #### Account Info Retrieval
 ```
-FastAPI → IBKRThreadedBroker.get_account()
-       → Thread queue: Request("get_account")
-       → IBKRClientThread._handle_request()
-       → IBKRWrapper: reqAccountUpdates(), reqAccountSummary()
-       → Callback: accountDownloadEnd()
-       → RequestManager: complete_request()
-       → Async wait returns → Account data
+FastAPI → IBKRInsyncBroker.get_account()
+       → await ib.reqAccountUpdates()
+       → ib_insync: async call to IB Gateway
+       → Callback: accountSummary()
+       → Result extracted → Account data
 ```
 
 #### Order Placement Flow
 ```
-FastAPI → IBKRThreadedBroker.place_order(order)
-       → asyncio.to_thread() with lambda
-       → Direct IB API call: client.placeOrder()
-       → IBKRWrapper: openOrder(), orderStatus()
+FastAPI → IBKRInsyncBroker.place_order(order)
+       → await ib.placeOrder(order, trade)
+       → ib_insync: async call to IB Gateway
+       → Callback: openOrder(), orderStatus()
        → Returns order_id
 ```
 
@@ -447,7 +468,8 @@ FastAPI → IBKRThreadedBroker.place_order(order)
 - **Paper Trading**: Always use paper trading for testing (port 7497)
 - **Order Validation**: All orders validated before submission
 - **Position Limits**: Configurable max position size and daily order limits
-- **Circuit Breakers**: Automatic halt on excessive losses
+- **Circuit Breaker**: Automatic halt on excessive connection failures
+- **Risk Limits**: Enforced position size and daily order limits
 
 ### Troubleshooting
 
@@ -462,16 +484,11 @@ netstat -an | grep 7497
 
 # Test connection manually
 python3 -c "
-from ibapi.client import EClient
-from ibapi.wrapper import EWrapper
-import threading
-
-class TestWrapper(EWrapper): pass
-
-client = EClient(TestWrapper())
-client.connect('127.0.0.1', 7497, clientId=999)
+from ib_insync import IB
+ib = IB()
+ib.connect('127.0.0.1', 7497, clientId=999)
 print('Connected!')
-client.disconnect()
+ib.disconnect()
 "
 ```
 
@@ -483,26 +500,8 @@ client.disconnect()
 | "Invalid client ID" | Client ID already in use | Use unique client_id |
 | "Not connected" | Connection not established | Call `await connect()` first |
 | "Request timed out" | Slow IB Gateway response | Increase timeout |
+| "Circuit breaker open" | Too many failures | Wait for cooldown |
 | "Insufficient buying power" | Account has no funds | Check account balance |
-
-### Code Review Summary
-
-**Overall Assessment:** ✅ **Excellent**
-
-The IBKR integration is well-designed with:
-
-- **Clean Architecture**: Proper separation of concerns between threading, async wrapper, and integration layers
-- **Thread Safety**: Proper use of threading locks and events for synchronization
-- **Error Handling**: Comprehensive error handling with logging
-- **Configurability**: Flexible configuration via environment variables and YAML
-- **Testing**: Good test coverage for unit and integration scenarios
-
-**Key Strengths:**
-1. Avoids event loop conflicts through thread-based design
-2. Lazy connection initialization prevents startup issues
-3. Singleton pattern for clean global access
-4. Request/Response pattern with events for async/await bridge
-5. Comprehensive IB API callback handling
 
 **See `SYSTEM_DESIGN.md` for detailed architecture documentation.**
 
@@ -524,7 +523,7 @@ cd ~/projects/trading-agent
 python3 -m venv venv
 source venv/bin/activate
 
-# Install dependencies
+# Install dependencies (includes ib_insync)
 pip install -r requirements.txt
 ```
 
@@ -874,6 +873,17 @@ ZAI_TIMEOUT=30
 
 # Watchlist
 WATCHLIST=["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "NVDA", "META"]
+
+# IBKR (for live trading)
+IBKR_ENABLED=true
+IBKR_HOST=127.0.0.1
+IBKR_PORT=7497
+IBKR_CLIENT_ID=1
+IBKR_PAPER_TRADING=true
+
+# ib_insync broker settings
+IBKR_INSYNC_RECONNECT_ENABLED=true
+IBKR_CIRCUIT_BREAKER_ENABLED=true
 ```
 
 ## Database Schema
@@ -928,9 +938,15 @@ trading-agent/
 │   │   └── manager.py          # Portfolio tracking
 │   ├── backtest/
 │   │   └── engine.py           # Backtrader wrapper
+│   ├── brokers/
+│   │   ├── base.py             # Base broker interface
+│   │   └── ibkr/
+│   │       ├── integration.py  # IBKR integration layer
+│   │       └── ibkr_insync_broker.py  # Native async broker (v2.0)
 │   └── api/
 │       └── templates/          # HTMX templates
 └── tests/
+    └── brokers/                # IBKR broker tests
 ```
 
 ## Development
