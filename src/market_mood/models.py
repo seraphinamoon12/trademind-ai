@@ -1,7 +1,7 @@
 """Data models for market mood indicators."""
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, Literal
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 
 
