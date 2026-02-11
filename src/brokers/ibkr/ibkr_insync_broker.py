@@ -47,7 +47,9 @@ class IBKRInsyncBroker(BaseBroker):
         account: Optional[str] = None
     ):
         super().__init__()
-        self._ib = IB()
+        # Fix: Don't create IB instance in __init__ to avoid event loop issues
+        # Wait until connect() is called from within the running event loop
+        self._ib: Optional[IB] = None
         self._host = host or settings.ibkr_host
         self._port = port or settings.ibkr_port
         self._client_id = client_id or settings.ibkr_client_id
@@ -86,6 +88,12 @@ class IBKRInsyncBroker(BaseBroker):
             f"lazy_connect={self._lazy_connect}, circuit_breaker={self._circuit_breaker_enabled}"
         )
 
+    def _get_ib(self) -> IB:
+        """Get or create IB instance - ensures it's created in the correct event loop."""
+        if self._ib is None:
+            self._ib = IB()
+        return self._ib
+
     async def connect(self) -> None:
         """Establish connection to IB Gateway."""
         async with self._connection_lock:
@@ -99,7 +107,7 @@ class IBKRInsyncBroker(BaseBroker):
             logger.info(f"Connecting to IB Gateway at {self._host}:{self._port}")
             start_time = time.time()
             try:
-                await self._ib.connectAsync(
+                await self._get_ib().connectAsync(
                     host=self._host,
                     port=self._port,
                     clientId=self._client_id,
@@ -108,7 +116,7 @@ class IBKRInsyncBroker(BaseBroker):
 
                 await asyncio.sleep(DEFAULT_POST_CONNECT_WAIT_TIME)
 
-                if not self._ib.isConnected():
+                if not self._get_ib().isConnected():
                     logger.error("Connection failed - IB Gateway not connected after connectAsync")
                     self._record_connection_failure()
                     raise ConnectionError("Failed to connect to IB Gateway")
@@ -157,7 +165,7 @@ class IBKRInsyncBroker(BaseBroker):
 
             logger.info("Disconnecting from IB Gateway")
             try:
-                self._ib.disconnect()
+                self._get_ib().disconnect()
                 self._connected = False
                 logger.info("Disconnected from IB Gateway")
             except Exception as e:
@@ -170,12 +178,12 @@ class IBKRInsyncBroker(BaseBroker):
 
         logger.info("Fetching positions from IB Gateway")
         try:
-            self._ib.reqPositions()
+            self._get_ib().reqPositions()
 
             await asyncio.sleep(DEFAULT_POSITIONS_WAIT_TIME)
 
             positions = []
-            for pos in self._ib.positions():
+            for pos in self._get_ib().positions():
                 symbol = pos.contract.symbol
                 quantity = int(pos.position)
                 avg_cost = float(pos.avgCost)
@@ -210,14 +218,14 @@ class IBKRInsyncBroker(BaseBroker):
             # Safely get account code with bounds checking to prevent IndexError
             account_code = self._account
             if not account_code:
-                managed_accounts = self._ib.managedAccounts()
+                managed_accounts = self._get_ib().managedAccounts()
                 if managed_accounts:
                     account_code = managed_accounts[0]
 
             if not account_code:
                 raise ValueError("No account code available")
 
-            summary = await self._ib.accountSummaryAsync()
+            summary = await self._get_ib().accountSummaryAsync()
 
             account_data = {}
             for item in summary:
@@ -293,7 +301,7 @@ class IBKRInsyncBroker(BaseBroker):
             else:
                 raise ValueError(f"Unsupported order type: {order.order_type}")
 
-            trade = self._ib.placeOrder(contract, ib_order)
+            trade = self._get_ib().placeOrder(contract, ib_order)
             order_id = str(trade.order.orderId)
 
             # Update metrics
@@ -315,9 +323,9 @@ class IBKRInsyncBroker(BaseBroker):
 
         logger.info(f"Cancelling order: {order_id}")
         try:
-            for trade in self._ib.openTrades():
+            for trade in self._get_ib().openTrades():
                 if trade.order.orderId == int(order_id):
-                    self._ib.cancelOrder(trade.order)
+                    self._get_ib().cancelOrder(trade.order)
                     logger.info(f"Order cancelled: {order_id}")
                     return True
 
@@ -332,7 +340,7 @@ class IBKRInsyncBroker(BaseBroker):
         await self._ensure_connected()
 
         try:
-            for trade in self._ib.openTrades():
+            for trade in self._get_ib().openTrades():
                 if trade.order.orderId == int(order_id):
                     status = trade.orderStatus.status
                     status_map = {
@@ -360,7 +368,7 @@ class IBKRInsyncBroker(BaseBroker):
         logger.info(f"Fetching orders (status filter: {status})")
         try:
             orders = []
-            open_trades = self._ib.openTrades()
+            open_trades = self._get_ib().openTrades()
 
             for trade in open_trades:
                 ib_order = trade.order
@@ -458,7 +466,7 @@ class IBKRInsyncBroker(BaseBroker):
                 currency="USD"
             )
 
-            ticker = self._ib.reqMktData(contract, "", False, False)
+            ticker = self._get_ib().reqMktData(contract, "", False, False)
 
             await asyncio.sleep(DEFAULT_MARKET_PRICE_WAIT_TIME)
 
@@ -535,7 +543,7 @@ class IBKRInsyncBroker(BaseBroker):
                 currency="USD"
             )
 
-            bars = await self._ib.reqHistoricalDataAsync(
+            bars = await self._get_ib().reqHistoricalDataAsync(
                 contract,
                 endDateTime=end_date or "",
                 durationStr=duration,
@@ -572,7 +580,7 @@ class IBKRInsyncBroker(BaseBroker):
                 await self.connect()
             else:
                 raise ConnectionError("Not connected to IB Gateway")
-        elif not self._ib.isConnected():
+        elif not self._get_ib().isConnected():
             logger.warning("Connection lost, attempting to reconnect")
             await self._reconnect()
 
@@ -670,7 +678,7 @@ class IBKRInsyncBroker(BaseBroker):
             await asyncio.sleep(backoff)
 
             try:
-                await self._ib.connectAsync(
+                await self._get_ib().connectAsync(
                     host=self._host,
                     port=self._port,
                     clientId=self._client_id,
@@ -679,7 +687,7 @@ class IBKRInsyncBroker(BaseBroker):
 
                 await asyncio.sleep(DEFAULT_POST_CONNECT_WAIT_TIME)
 
-                if self._ib.isConnected():
+                if self._get_ib().isConnected():
                     self._connected = True
                     self._reset_circuit_breaker()
                     # Update metrics
