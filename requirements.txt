@@ -7,7 +7,7 @@ psycopg2-binary
 alembic
 redis
 rq
-yfinance>=0.2.66,<1.0
+yfinance>=1.0
 pandas
 pandas-ta
 numpy
