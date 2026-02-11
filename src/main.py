@@ -1,4 +1,5 @@
 """FastAPI application."""
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -6,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import os
 import asyncio
+import logging
 
 from src.core.database import init_db, get_db
 from src.config import settings
@@ -13,10 +15,48 @@ from src.api.routes import portfolio, trades, strategies, agent, safety, human_r
 from src.api.routes import ibkr_trading
 from src.api.routes import market_mood
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for FastAPI application."""
+    # Startup: Initialize database and IBKR if enabled
+    init_db()
+    logger.info(f"✅ {settings.app_name} started")
+    logger.info(f"   Mode: {settings.app_mode}")
+    logger.info(f"   Database: {settings.database_url}")
+
+    # Initialize IBKR integration in the running event loop
+    if settings.ibkr_enabled:
+        from src.brokers.ibkr.integration import get_ibkr_integration
+        try:
+            ibkr = get_ibkr_integration()
+            await ibkr.initialize_in_loop()
+            logger.info(f"   IBKR: Initialized in event loop (connection on-demand)")
+        except Exception as e:
+            logger.error(f"   IBKR: Initialization failed: {e}")
+    else:
+        logger.info(f"   IBKR: Disabled")
+
+    yield
+
+    # Shutdown: Cleanup IBKR connection
+    if settings.ibkr_enabled:
+        from src.brokers.ibkr.integration import get_ibkr_integration
+        try:
+            ibkr = get_ibkr_integration()
+            await ibkr.disconnect()
+            logger.info("IBKR connection closed")
+        except Exception as e:
+            logger.error(f"Error closing IBKR connection: {e}")
+
+
 app = FastAPI(
     title=settings.app_name,
     description="AI-powered trading agent with rule-based strategies",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Setup templates
@@ -32,16 +72,6 @@ app.include_router(human_review.router, prefix="", tags=["human-review"])
 app.include_router(config.router, prefix="/api", tags=["config"])
 app.include_router(ibkr_trading.router, prefix="/api/ibkr", tags=["IBKR Trading"])
 app.include_router(market_mood.router, prefix="/api/market", tags=["market-mood"])
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup."""
-    init_db()
-    print(f"✅ {settings.app_name} started")
-    print(f"   Mode: {settings.app_mode}")
-    print(f"   Database: {settings.database_url}")
-    print(f"   IBKR: Enabled (connection on-demand)")
 
 
 @app.get("/", response_class=HTMLResponse)

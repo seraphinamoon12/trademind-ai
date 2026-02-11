@@ -34,18 +34,23 @@ class IBKRIntegration:
     @property
     def is_connected(self) -> bool:
         return self._connected and self._broker is not None
-    
+
     @property
     def broker(self):
         return self._broker
-    
-    async def connect(self) -> bool:
-        """Connect to IB Gateway."""
+
+    async def initialize_in_loop(self) -> bool:
+        """Initialize broker in the current event loop.
+
+        MUST be called from within a running event loop (e.g., FastAPI lifespan).
+        This ensures all asyncio primitives are bound to the correct event loop.
+        """
         if not settings.ibkr_enabled:
             logger.info("IBKR integration disabled in settings")
             return False
 
-        if self._connected and self._broker:
+        if self._broker is not None:
+            logger.info("IBKR broker already initialized")
             return True
 
         try:
@@ -58,12 +63,24 @@ class IBKRIntegration:
                 account=settings.ibkr_account
             )
 
-            logger.info("✅ IBKR insync broker initialized (connection deferred)")
+            # Initialize event loop-dependent resources
+            await self._broker.initialize_in_loop()
+
+            logger.info("✅ IBKR insync broker initialized in event loop")
             return True
 
         except Exception as e:
             logger.error(f"❌ IBKR initialization error: {e}")
             return False
+
+    async def connect(self) -> bool:
+        """Connect to IB Gateway.
+
+        Deprecated: Use initialize_in_loop() followed by ensure_connected() instead.
+        This method is kept for backward compatibility.
+        """
+        # Just delegate to initialize_in_loop
+        return await self.initialize_in_loop()
     
     async def ensure_connected(self) -> bool:
         """Ensure connection to IB Gateway (lazy connection)."""
@@ -72,8 +89,10 @@ class IBKRIntegration:
 
         # Initialize broker if not already done
         if not self._broker:
-            await self.connect()
+            logger.info("Broker not initialized, initializing in current event loop...")
+            await self.initialize_in_loop()
             if not self._broker:
+                logger.error("❌ Failed to initialize broker")
                 return False
 
         if self._connected:

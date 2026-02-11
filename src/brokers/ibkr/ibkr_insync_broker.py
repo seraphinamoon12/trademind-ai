@@ -6,6 +6,29 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 from enum import Enum
 
+# CRITICAL FIX: Monkey-patch ib_insync to use the running event loop
+# instead of get_event_loop() which creates new loops in Python 3.10+
+import ib_insync.util
+import ib_insync.connection
+
+def _patched_getLoop():
+    """Patched getLoop that uses get_running_loop() for Python 3.10+ compatibility.
+
+    This fixes the "attached to a different loop" error when using ib_insync
+    with FastAPI/uvicorn in Python 3.10+.
+    """
+    try:
+        # Try to get the running loop (Python 3.7+)
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        # Fallback to get_event_loop if no loop is running
+        # This maintains compatibility with non-async contexts
+        return asyncio.get_event_loop()
+
+# Apply the monkey patch globally across ib_insync modules
+ib_insync.util.getLoop = _patched_getLoop
+ib_insync.connection.getLoop = _patched_getLoop
+
 from ib_insync import IB, Stock, MarketOrder, LimitOrder, StopOrder, Order, Contract
 from ib_insync.wrapper import RequestError
 
@@ -47,15 +70,15 @@ class IBKRInsyncBroker(BaseBroker):
         account: Optional[str] = None
     ):
         super().__init__()
-        # Fix: Don't create IB instance in __init__ to avoid event loop issues
-        # Wait until connect() is called from within the running event loop
+        # Fix: Don't create IB instance or Lock in __init__ to avoid event loop issues
+        # These will be created lazily when connect() is called from within the running event loop
         self._ib: Optional[IB] = None
+        self._connection_lock: Optional[asyncio.Lock] = None
         self._host = host or settings.ibkr_host
         self._port = port or settings.ibkr_port
         self._client_id = client_id or settings.ibkr_client_id
         self._account = account or settings.ibkr_account
 
-        self._connection_lock = asyncio.Lock()
         self._lazy_connect = settings.ibkr_insync_lazy_connect
         # Use settings for reconnection parameters instead of hardcoded values
         self._reconnect_enabled = settings.ibkr_insync_reconnect_enabled
@@ -88,15 +111,42 @@ class IBKRInsyncBroker(BaseBroker):
             f"lazy_connect={self._lazy_connect}, circuit_breaker={self._circuit_breaker_enabled}"
         )
 
-    def _get_ib(self) -> IB:
-        """Get or create IB instance - ensures it's created in the correct event loop."""
+    async def initialize_in_loop(self) -> None:
+        """Initialize event loop-dependent resources (Lock, IB instance).
+
+        MUST be called from within a running event loop context (e.g., FastAPI lifespan).
+        This ensures all asyncio primitives are bound to the correct event loop.
+        """
+        if self._connection_lock is None:
+            # Create the lock in the current event loop
+            self._connection_lock = asyncio.Lock()
+            logger.info("Connection lock initialized in event loop")
+
         if self._ib is None:
+            # Create IB instance in the current event loop
+            # This ensures all internal asyncio structures are bound to this loop
             self._ib = IB()
+            logger.info("IB instance created in event loop")
+
+    def _get_ib(self) -> IB:
+        """Get IB instance - must be initialized via initialize_in_loop() first."""
+        if self._ib is None:
+            raise RuntimeError(
+                "IB instance not initialized. Call initialize_in_loop() first from async context."
+            )
         return self._ib
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Get connection lock - must be initialized via initialize_in_loop() first."""
+        if self._connection_lock is None:
+            raise RuntimeError(
+                "Connection lock not initialized. Call initialize_in_loop() first from async context."
+            )
+        return self._connection_lock
 
     async def connect(self) -> None:
         """Establish connection to IB Gateway."""
-        async with self._connection_lock:
+        async with self._get_lock():
             if self._connected:
                 logger.info("Already connected to IB Gateway")
                 return
@@ -158,7 +208,7 @@ class IBKRInsyncBroker(BaseBroker):
 
     async def disconnect(self) -> None:
         """Close connection to IB Gateway."""
-        async with self._connection_lock:
+        async with self._get_lock():
             if not self._connected:
                 logger.info("Not connected to IB Gateway")
                 return
@@ -178,12 +228,12 @@ class IBKRInsyncBroker(BaseBroker):
 
         logger.info("Fetching positions from IB Gateway")
         try:
-            self._get_ib().reqPositions()
-
-            await asyncio.sleep(DEFAULT_POSITIONS_WAIT_TIME)
+            # Use async version to avoid "event loop already running" error
+            # reqPositionsAsync returns the positions directly
+            ib_positions = await self._get_ib().reqPositionsAsync()
 
             positions = []
-            for pos in self._get_ib().positions():
+            for pos in ib_positions:
                 symbol = pos.contract.symbol
                 quantity = int(pos.position)
                 avg_cost = float(pos.avgCost)

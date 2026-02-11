@@ -1,5 +1,5 @@
 """FRED (Federal Reserve Economic Data) provider for market mood indicators."""
-from typing import Optional
+from typing import Optional, Any
 import logging
 from datetime import datetime, timedelta
 import time
@@ -16,6 +16,7 @@ from src.market_mood.models import (
     CreditSpreadData,
 )
 from src.market_mood.exceptions import DataProviderError
+from src.market_mood.config import MarketMoodConfig
 
 logger = logging.getLogger(__name__)
 
