@@ -4,9 +4,9 @@ This checklist guides you through the migration to the new `ib_insync`-based bro
 
 ## Overview
 
-**Status**: Production Ready (v1.5+)  
-**Default**: Enabled by default (`IBKR_USE_INSYNC=true`)  
-**Rollback**: Immediate (set `IBKR_USE_INSYNC=false`)
+**Status**: ✅ Complete (2026-02-10)  
+**Default**: IBKR Insync broker  
+**Rollback**: Restore from git history: `git checkout <commit> -- src/brokers/ibkr/`
 
 ## Pre-Migration Checklist
 
@@ -410,4 +410,16 @@ Migration is successful when:
 
 **Last Updated**: 2026-02-10  
 **Version**: 1.5  
-**Status**: Production Ready
+**Status**: ✅ MIGRATION COMPLETE
+
+## Completion Notes
+
+The IBKR Insync broker migration is complete as of 2026-02-10:
+
+- Old broker files removed (threaded_client.py, async_broker.py)
+- New broker (ibkr_insync_broker.py) is now the only broker
+- All client code updated to use the new broker
+- Configuration simplified (removed ibkr_use_insync setting)
+- All tests passing
+
+See `docs/ARCHITECTURE_MIGRATION_COMPLETE.md` for details.

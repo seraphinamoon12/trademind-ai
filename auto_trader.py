@@ -13,7 +13,7 @@ from typing import List, Dict
 sys.path.insert(0, '.')
 
 from src.config import settings
-from src.brokers.ibkr.async_broker import IBKRThreadedBroker
+from src.brokers.ibkr.ibkr_insync_broker import IBKRInsyncBroker
 from src.brokers.base import Order, OrderType, OrderSide
 from src.data.providers import yahoo_provider
 from src.api.routes.safety import get_safety_status
@@ -46,11 +46,10 @@ class AutoTrader:
     async def connect(self):
         """Connect to IB Gateway."""
         logger.info("Connecting to IB Gateway...")
-        self.broker = IBKRThreadedBroker(
+        self.broker = IBKRInsyncBroker(
             host='127.0.0.1',
             port=7497,
-            client_id=400,
-            paper_trading=True
+            client_id=400
         )
         await self.broker.connect()
         logger.info("✅ Connected to IB Gateway (Paper Trading)")
@@ -113,31 +112,18 @@ class AutoTrader:
     async def place_order(self, symbol: str, quantity: int, side: str, price: float) -> bool:
         """Place an order directly via IB API."""
         try:
-            from ibapi.contract import Contract
-            from ibapi.order import Order as IBOrder
-            
-            order_id = self.broker._get_next_req_id()
-            
-            contract = Contract()
-            contract.symbol = symbol
-            contract.secType = "STK"
-            contract.exchange = "SMART"
-            contract.currency = "USD"
-            
-            ib_order = IBOrder()
-            ib_order.action = side.upper()
-            ib_order.totalQuantity = quantity
-            ib_order.orderType = "LMT"
-            ib_order.lmtPrice = price
-            ib_order.tif = "GTC"
-            ib_order.eTradeOnly = False
-            ib_order.firmQuoteOnly = False
-            
-            self.broker._thread.client.placeOrder(order_id, contract, ib_order)
-            
+            order = Order(
+                order_id="",
+                symbol=symbol,
+                quantity=quantity,
+                order_type=OrderType.LIMIT,
+                side=OrderSide.BUY if side.lower() == 'buy' else OrderSide.SELL,
+                price=price
+            )
+            order_id = await self.broker.place_order(order)
             logger.info(f"✅ Order placed: {side.upper()} {quantity} {symbol} @ ${price:.2f}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error placing order: {e}")
             return False

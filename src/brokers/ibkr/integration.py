@@ -44,41 +44,21 @@ class IBKRIntegration:
         if not settings.ibkr_enabled:
             logger.info("IBKR integration disabled in settings")
             return False
-        
+
         if self._connected and self._broker:
             return True
-        
+
         try:
-            # Check which broker implementation to use based on settings
-            if settings.ibkr_use_insync:
-                # Use ib_insync-based async broker
-                from src.brokers.ibkr.ibkr_insync_broker import IBKRInsyncBroker
+            from src.brokers.ibkr.ibkr_insync_broker import IBKRInsyncBroker
 
-                self._broker = IBKRInsyncBroker(
-                    host=settings.ibkr_host,
-                    port=settings.ibkr_port,
-                    client_id=settings.ibkr_client_id,
-                    account=settings.ibkr_account
-                )
+            self._broker = IBKRInsyncBroker(
+                host=settings.ibkr_host,
+                port=settings.ibkr_port,
+                client_id=settings.ibkr_client_id,
+                account=settings.ibkr_account
+            )
 
-                # Don't connect here - do it lazily when needed
-                # This avoids event loop conflicts during startup
-                logger.info("✅ IBKR insync broker initialized (connection deferred)")
-            else:
-                # Use the original threaded broker
-                from src.brokers.ibkr.async_broker import IBKRThreadedBroker
-
-                self._broker = IBKRThreadedBroker(
-                    host=settings.ibkr_host,
-                    port=settings.ibkr_port,
-                    client_id=settings.ibkr_client_id,
-                    paper_trading=settings.ibkr_paper_trading
-                )
-
-                # Don't connect here - do it lazily when needed
-                # This avoids event loop conflicts during startup
-                logger.info("✅ IBKR threaded broker initialized (connection deferred)")
-
+            logger.info("✅ IBKR insync broker initialized (connection deferred)")
             return True
 
         except Exception as e:

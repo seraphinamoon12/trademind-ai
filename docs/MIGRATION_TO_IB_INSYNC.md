@@ -1,12 +1,12 @@
 # Migration Guide: IBKR Insync Broker
 
-This guide explains how to migrate from the old threaded IBKR broker to the new `ib_insync`-based async broker.
+This guide explains the migration from the old threaded IBKR broker to the new `ib_insync`-based async broker.
 
 ## Overview
 
-TradeMind supports two IBKR broker implementations:
+TradeMind uses IBKR Insync Broker exclusively:
 
-### New Broker: IBKRInsyncBroker (Recommended - Default since v1.5)
+### IBKRInsyncBroker (Active)
 - Async implementation using `ib_insync` library
 - Cleaner async/await code (no threading complexity)
 - Better integration with FastAPI async framework
@@ -14,15 +14,11 @@ TradeMind supports two IBKR broker implementations:
 - ~40% lower memory footprint
 - Better CPU efficiency
 
-### Old Broker: IBKRThreadedBroker (Deprecated - Removal in v2.0)
-- Threaded implementation using official `ibapi` library
-- Still functional for backward compatibility
-- Shows deprecation warnings
-- Will be removed in v2.0
+**Migration Status: ✅ COMPLETE** - The old broker has been removed as of 2026-02-10
 
 ## Quick Start
 
-The new broker is **already enabled by default**. To verify or change settings:
+The ib_insync broker is the active broker. No configuration changes needed.
 
 ### Verify Current Broker
 ```bash
@@ -31,238 +27,24 @@ curl http://localhost:8000/api/ibkr/status
 
 # Output includes broker_type:
 # {
-#   "broker_type": "ib_insync",  # or "threaded"
+#   "broker_type": "ib_insync",
 #   "connected": true,
 #   ...
 # }
 ```
 
-### Switch to Old Broker (Rollback)
-If you need to use the old broker temporarily:
-```bash
-export IBKR_USE_INSYNC=false
-# Or in .env:
-# IBKR_USE_INSYNC=false
-```
-
-### Re-enable New Broker
-```bash
-export IBKR_USE_INSYNC=true
-# Or in .env:
-# IBKR_USE_INSYNC=true
-```
-
 ## Configuration Options
 
-The new broker has its own configuration section in `src/config.py`:
+The broker has its own configuration section in `src/config.py`:
 
 ```python
 # IBKR Insync Configuration
-ibkr_use_insync: bool = Field(default=True)  # Enable new broker
 ibkr_insync_reconnect_enabled: bool = Field(default=True)  # Auto-reconnect
 ibkr_insync_max_reconnect_attempts: int = Field(default=5)  # Max reconnection attempts
 ibkr_insync_reconnect_backoff: int = Field(default=5)  # Backoff in seconds
 ibkr_insync_connect_timeout: int = Field(default=10)  # Connection timeout
 ibkr_insync_lazy_connect: bool = Field(default=True)  # Lazy connection
 ```
-
-## How Switching Works
-
-The `IBKRIntegration` class automatically selects the appropriate broker based on `ibkr_use_insync`:
-
-```python
-# From src/brokers/ibkr/integration.py
-if settings.ibkr_use_insync:
-    from src.brokers.ibkr.ibkr_insync_broker import IBKRInsyncBroker
-    self._broker = IBKRInsyncBroker(...)
-else:
-    from src.brokers.ibkr.async_broker import IBKRThreadedBroker
-    self._broker = IBKRThreadedBroker(...)
-```
-
-All API endpoints and the auto-trader use `IBKRIntegration`, so the broker switching is transparent.
-
-## Migration Steps
-
-### Pre-Migration Checklist
-
-- [ ] IB Gateway/TWS is running and configured
-- [ ] You have paper trading access (recommended for testing)
-- [ ] Backup current configuration (.env, config files)
-- [ ] Review this migration guide completely
-
-### Step 1: Verify Current Configuration
-```bash
-# Check which broker is active
-python -c "from src.config import settings; print('Broker:', 'insync' if settings.ibkr_use_insync else 'threaded')"
-
-# Check API status (if server running)
-curl http://localhost:8000/api/ibkr/status
-```
-
-### Step 2: Enable New Broker (if not already enabled)
-```bash
-# Set environment variable
-export IBKR_USE_INSYNC=true
-
-# Or update .env file
-echo "IBKR_USE_INSYNC=true" >> .env
-```
-
-### Step 3: Restart Application
-```bash
-# Stop existing server
-pkill -f uvicorn
-
-# Start server
-uvicorn src.main:app --host 0.0.0.0 --port 8000
-```
-
-### Step 4: Test Connection
-```bash
-curl http://localhost:8000/api/ibkr/status
-```
-
-Expected response with new broker:
-```json
-{
-  "enabled": true,
-  "connected": true,
-  "paper_trading": true,
-  "broker_type": "ib_insync",
-  "mode": "paper"
-}
-```
-
-### Step 5: Test Key Endpoints
-```bash
-# Get account info
-curl http://localhost:8000/api/ibkr/account
-
-# Get positions
-curl http://localhost:8000/api/ibkr/positions
-
-# Get open orders
-curl http://localhost:8000/api/ibkr/orders
-```
-
-### Step 6: Test Paper Trading
-Place a small paper order to verify functionality:
-```bash
-curl -X POST http://localhost:8000/api/ibkr/orders \
-  -H "Content-Type: application/json" \
-  -d '{
-    "symbol": "AAPL",
-    "side": "BUY",
-    "order_type": "LIMIT",
-    "quantity": 1,
-    "price": 100.00
-  }'
-```
-
-### Step 7: Test Auto-Trader (if applicable)
-```bash
-python langgraph_auto_trader.py
-```
-
-### Step 8: Monitor Logs
-Check for any warnings or errors:
-```bash
-# Check logs for deprecation warnings
-grep -i "deprecated" logs/
-
-# Check for broker initialization
-grep -i "ibkr.*broker" logs/
-```
-
-### 2. Enable New Broker (if not already enabled)
-Set `ibkr_use_insync=True` in your configuration.
-
-### 3. Test Connection
-Start the API server and test connection:
-```bash
-curl http://localhost:8000/api/ibkr/status
-```
-
-Expected response with new broker:
-```json
-{
-  "enabled": true,
-  "connected": true,
-  "paper_trading": true,
-  "mode": "paper"
-}
-```
-
-### 4. Test Key Endpoints
-Test all IBKR endpoints to ensure compatibility:
-
-```bash
-# Connect to IBKR
-curl -X POST http://localhost:8000/api/ibkr/connect
-
-# Get account info
-curl http://localhost:8000/api/ibkr/account
-
-# Get positions
-curl http://localhost:8000/api/ibkr/positions
-
-# Get open orders
-curl http://localhost:8000/api/ibkr/orders
-
-# Disconnect
-curl -X POST http://localhost:8000/api/ibkr/disconnect
-```
-
-### 5. Test Auto-Trader
-If using the auto-trader, verify it works with the new broker:
-```bash
-python langgraph_auto_trader.py
-```
-
-## Rollback Procedure
-
-If you encounter any issues with the new broker, you can quickly switch back:
-
-### Emergency Rollback
-```bash
-# Stop the application
-pkill -f uvicorn
-pkill -f langgraph_auto_trader
-
-# Switch to old broker
-export IBKR_USE_INSYNC=false
-# Or edit .env:
-# IBKR_USE_INSYNC=false
-
-# Restart application
-uvicorn src.main:app --host 0.0.0.0 --port 8000
-```
-
-### Verify Rollback
-```bash
-curl http://localhost:8000/api/ibkr/status
-# Should show: "broker_type": "threaded"
-```
-
-### Report Issues
-After rollback, please report:
-1. Error messages from logs
-2. Steps to reproduce the issue
-3. IB Gateway version
-4. `ib_insync` version (`pip show ib_insync`)
-
-## Known Limitations
-
-### New Broker (IBKRInsyncBroker)
-1. **Market Data Subscriptions**: Uses `ib_insync`'s built-in subscription management (slightly different API)
-2. **Order Tracking**: Uses `ib_insync`'s real-time order updates (may have slight behavior differences)
-3. **Reconnection**: Simplified logic (circuit breaker + exponential backoff) vs old broker's custom logic
-
-### Old Broker (IBKRThreadedBroker) - Deprecated
-1. **Threading Overhead**: Higher memory usage due to threading
-2. **Event Loop Complexity**: Manual bridging between sync IB API and async FastAPI
-3. **No Circuit Breaker**: Less protection against connection storms
 
 ## Troubleshooting
 

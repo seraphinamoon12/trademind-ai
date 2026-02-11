@@ -181,8 +181,7 @@ class Settings(BaseSettings):
     ibkr_real_time_bars: bool = Field(default=False)
     ibkr_delayed_data: bool = Field(default=True)
 
-    # IBKR Insync Configuration (new ib_insync-based broker)
-    ibkr_use_insync: bool = Field(default=True)
+    # IBKR Insync Configuration
     ibkr_insync_reconnect_enabled: bool = Field(default=True)
     ibkr_insync_max_reconnect_attempts: int = Field(default=5)
     ibkr_insync_reconnect_backoff: int = Field(default=5)

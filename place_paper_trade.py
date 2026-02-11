@@ -4,7 +4,7 @@ import asyncio
 import sys
 sys.path.insert(0, '.')
 
-from src.brokers.ibkr.async_broker import IBKRThreadedBroker
+from src.brokers.ibkr.ibkr_insync_broker import IBKRInsyncBroker
 from src.brokers.base import Order, OrderType, OrderSide
 
 
@@ -16,11 +16,10 @@ async def place_paper_trade():
     
     # Connect to IB Gateway
     print("\n📡 Connecting to IB Gateway...")
-    broker = IBKRThreadedBroker(
+    broker = IBKRInsyncBroker(
         host='127.0.0.1',
-        port=7497,  # Paper trading port
-        client_id=100,  # Unique client ID for this session
-        paper_trading=True
+        port=7497,
+        client_id=100
     )
     
     try:

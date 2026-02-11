@@ -4,7 +4,7 @@ import asyncio
 import sys
 sys.path.insert(0, '.')
 
-from src.brokers.ibkr.async_broker import IBKRThreadedBroker
+from src.brokers.ibkr.ibkr_insync_broker import IBKRInsyncBroker
 from src.brokers.base import Order, OrderType, OrderSide
 
 
@@ -16,11 +16,10 @@ async def place_paper_trade():
     
     # Connect to IB Gateway
     print("\n📡 Connecting to IB Gateway...")
-    broker = IBKRThreadedBroker(
+    broker = IBKRInsyncBroker(
         host='127.0.0.1',
         port=7497,
-        client_id=200,  # Unique client ID
-        paper_trading=True
+        client_id=200
     )
     
     try:
@@ -53,31 +52,9 @@ async def place_paper_trade():
         
         # Place order directly without validation that needs market data
         print("\n📝 Submitting order to IB Gateway...")
-        
-        # Get next order ID
-        order_id = broker._get_next_req_id()
-        order.order_id = str(order_id)
-        
-        # Create contract and IB order
-        from ibapi.contract import Contract
-        from ibapi.order import Order as IBOrder
-        
-        contract = Contract()
-        contract.symbol = "AAPL"
-        contract.secType = "STK"
-        contract.exchange = "SMART"
-        contract.currency = "USD"
-        
-        ib_order = IBOrder()
-        ib_order.action = "BUY"
-        ib_order.totalQuantity = 10
-        ib_order.orderType = "LMT"
-        ib_order.lmtPrice = 190.00
-        ib_order.tif = "GTC"  # Good Till Canceled
-        
-        # Place order directly
-        broker._thread.client.placeOrder(order_id, contract, ib_order)
-        
+
+        order_id = await broker.place_order(order)
+
         print(f"✅ Order placed!")
         print(f"   Order ID: {order_id}")
         print(f"   Status: Submitted")
