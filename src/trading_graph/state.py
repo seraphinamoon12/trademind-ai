@@ -77,6 +77,12 @@ class TradingState(TypedDict, total=False):
     sentiment_signals: Annotated[dict, merge_dicts]
     risk_signals: Annotated[dict, merge_dicts]
     debate_result: Annotated[dict, merge_dicts]
+    market_mood_data: Annotated[dict, merge_dicts]
+    market_mood_signals: Annotated[dict, merge_dicts]
+    mood_indicators: Annotated[dict, merge_dicts]
+    position_sizing_adjustment: Annotated[dict, merge_dicts]
+    risk_adjustments: Annotated[dict, merge_dicts]
+    mood_adjusted_signals: Annotated[dict, merge_dicts]
 
     # ===== Decision =====
     final_decision: Annotated[dict, merge_dicts]

@@ -97,6 +97,19 @@ class Settings(BaseSettings):
     confidence_threshold_low: float = Field(default=0.3)
     sentiment_cache_ttl: int = Field(default=1800)  # 30 minutes
 
+    # Market Mood Detection Settings
+    market_mood_enabled: bool = Field(default=True)
+    market_mood_cache_ttl: int = Field(default=300)  # 5 minutes
+    market_mood_position_multipliers: dict = Field(default_factory=lambda: {
+        "extreme_fear": 1.5,
+        "fear": 1.25,
+        "neutral": 1.0,
+        "greed": 0.75,
+        "extreme_greed": 0.5,
+    })
+    market_mood_skip_conditions: list = Field(default_factory=lambda: ["extreme_greed"])
+    market_mood_min_confidence: float = Field(default=0.5)
+
     # Technical Analysis Thresholds
     rsi_oversold_threshold: int = Field(default=30)
     rsi_overbought_threshold: int = Field(default=70)

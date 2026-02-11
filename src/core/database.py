@@ -224,15 +224,61 @@ class StrategyPerformance(Base):
 class SectorAllocation(Base):
     """Sector concentration tracking."""
     __tablename__ = "sector_allocations"
-    
+
     id = Column(Integer, primary_key=True)
     timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     sector = Column(String(50), nullable=False)
     allocation_pct = Column(Numeric(5, 4))
     value = Column(Numeric(15, 2))
-    
+
     def __repr__(self):
         return f"<SectorAllocation({self.sector}: {self.allocation_pct:.1%})>"
+
+
+class MoodHistory(Base):
+    """Market mood history for tracking sentiment over time."""
+    __tablename__ = "mood_history"
+
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    overall_score = Column(Numeric(8, 2), nullable=False)
+    sentiment = Column(String(20), nullable=False)
+    confidence = Column(Numeric(3, 2), nullable=False)
+    components = Column(JSONB)
+
+    def __repr__(self):
+        return f"<MoodHistory({self.sentiment}: {self.overall_score:.1f})>"
+
+
+class MoodSignal(Base):
+    """Market mood trading signals history."""
+    __tablename__ = "mood_signals"
+
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    signal = Column(String(20), nullable=False)
+    strength = Column(String(20), nullable=False)
+    reasoning = Column(String(1000))
+    actions = Column(JSONB)
+
+    def __repr__(self):
+        return f"<MoodSignal({self.signal}: {self.strength})>"
+
+
+class MoodIndicatorValue(Base):
+    """Individual indicator values history."""
+    __tablename__ = "mood_indicator_values"
+
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    indicator_type = Column(String(50), nullable=False)
+    value = Column(Numeric(10, 4))
+    score = Column(Numeric(6, 2))
+    trend = Column(String(20))
+    metadata = Column(JSONB)
+
+    def __repr__(self):
+        return f"<MoodIndicatorValue({self.indicator_type}: {self.score:.1f})>"
 
 
 def create_hypertables():
@@ -276,10 +322,30 @@ def create_hypertables():
         """))
         
         conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_risk_events 
+            CREATE INDEX IF NOT EXISTS idx_risk_events
             ON risk_events (timestamp DESC);
         """))
-        
+
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_mood_history_timestamp
+            ON mood_history (timestamp DESC);
+        """))
+
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_mood_signals_timestamp
+            ON mood_signals (timestamp DESC);
+        """))
+
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_mood_indicator_values_timestamp
+            ON mood_indicator_values (timestamp DESC);
+        """))
+
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_mood_indicator_values_type
+            ON mood_indicator_values (indicator_type, timestamp DESC);
+        """))
+
         conn.commit()
 
 

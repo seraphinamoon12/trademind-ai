@@ -5,6 +5,7 @@ from src.trading_graph.nodes.analysis_nodes import technical_analysis, sentiment
 from src.trading_graph.nodes.execution_nodes import risk_assessment, execute_trade, retry_node
 from src.trading_graph.nodes.debate_nodes import debate_protocol
 from src.trading_graph.nodes.human_review_nodes import human_review
+from src.trading_graph.nodes.market_mood_node import market_mood_analysis
 
 __all__ = [
     "fetch_market_data",
@@ -15,5 +16,6 @@ __all__ = [
     "execute_trade",
     "retry_node",
     "debate_protocol",
-    "human_review"
+    "human_review",
+    "market_mood_analysis"
 ]
