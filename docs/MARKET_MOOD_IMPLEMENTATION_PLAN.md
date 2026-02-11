@@ -269,6 +269,169 @@ Put/Call Ratio = Total Put Volume / Total Call Volume
 
 ---
 
+### 6. Dollar Strength Index (DXY)
+
+**Description:** The U.S. Dollar Index measures the value of the dollar relative to a basket of foreign currencies (EUR, JPY, GBP, CAD, SEK, CHF). Acts as a risk sentiment indicator.
+
+**Why It Matters:**
+- Strong dollar = Risk-off environment (bearish for equities)
+- Weak dollar = Risk-on environment (bullish for equities)
+- Dollar strength affects multinational corporate earnings
+- Flight to safety during market stress strengthens USD
+
+**Data Source:**
+- **Yahoo Finance (Free):** Ticker `DX-Y.NYB` or `UUP` (Invesco DB USD Index Bullish Fund)
+  - Daily data with 15-minute delay
+  - No API key required
+  - Python: `yfinance.download("DX-Y.NYB")`
+
+- **FRED (Free):** DTWEXBGS (Trade Weighted U.S. Dollar Index)
+  - Federal Reserve Economic Data
+  - Daily updates
+  - API: `fredapi` Python library
+
+**Thresholds & Interpretation:**
+
+| DXY Range | Interpretation | Signal |
+|-----------|---------------|--------|
+| Rising sharply (>2% weekly) | Risk-off, flight to safety | Bearish (-70) |
+| Rising moderately | Strong dollar headwinds | Bearish (-30) |
+| Stable/Flat | Neutral dollar environment | Neutral (0) |
+| Falling moderately | Weak dollar tailwinds | Bullish (+30) |
+| Falling sharply (>2% weekly) | Risk-on, dollar weakness | Bullish (+70) |
+
+**Implementation Notes:**
+- Calculate weekly change percentage
+- Compare to 20-day moving average
+- Weight in composite score: 10%
+
+---
+
+### 7. Credit Spreads (High Yield - Investment Grade)
+
+**Description:** The spread between high yield (junk) bonds and investment grade bonds. Measures market confidence in corporate credit and economic outlook.
+
+**Why It Matters:**
+- Widening spreads = Fear of defaults, risk-off
+- Tightening spreads = Confidence in economy, risk-on
+- Leading indicator of market stress
+- Often diverges from equity markets before corrections
+
+**Data Source:**
+- **FRED (Free):** `BAMLH0A0HYM2` (ICE BofA High Yield Option-Adjusted Spread)
+  - Federal Reserve Economic Data
+  - Daily updates
+  - API: `fredapi` Python library
+  - Free with registration
+
+- **Alternative (Calculate):** 
+  - HYG (iShares High Yield ETF) yield minus
+  - LQD (iShares Investment Grade ETF) yield
+  - Yahoo Finance data
+
+**Thresholds & Interpretation:**
+
+| Spread Range | Interpretation | Signal |
+|--------------|---------------|--------|
+| < 300 bps | Complacency, tight credit | Bullish/Greed (+50) |
+| 300-400 bps | Normal credit conditions | Neutral (0) |
+| 400-500 bps | Elevated concern | Cautious (-30) |
+| 500-600 bps | High stress | Fear (-60) |
+| > 600 bps | Crisis levels | Extreme Fear (-80) |
+
+**Historical Context:**
+- 2008 Financial Crisis: Spreads > 2000 bps
+- 2020 COVID Crash: Spreads ~1000 bps
+- Normal Times: 300-400 bps
+
+**Implementation Notes:**
+- Track spread level and direction
+- Compare to 50-day moving average
+- Weight in composite score: 10%
+
+---
+
+### 8. Yield Curve (10-Year minus 2-Year Treasury)
+
+**Description:** The difference between 10-year and 2-year Treasury yields. The most reliable recession predictor, also indicates market risk appetite.
+
+**Why It Matters:**
+- Inversion (negative spread) = Recession warning, extreme fear
+- Steep curve = Economic optimism, risk-on
+- Flat curve = Uncertainty, neutral
+- Leading indicator (12-18 months ahead of recession)
+
+**Data Source:**
+- **FRED (Free):** `T10Y2Y` (10-Year Treasury Constant Maturity Minus 2-Year)
+  - Federal Reserve Economic Data
+  - Daily updates
+  - API: `fredapi` Python library
+  - Free with registration
+
+- **Alternative:**
+  - `^TNX` (10-year yield) minus `^FVX` (5-year yield) from Yahoo Finance
+  - Less precise but readily available
+
+**Thresholds & Interpretation:**
+
+| Spread Range | Interpretation | Signal |
+|--------------|---------------|--------|
+| > 100 bps | Steep curve, strong growth | Bullish (+50) |
+| 25-100 bps | Normal curve | Neutral (+10) |
+| 0-25 bps | Flat curve, caution | Neutral/Cautious (-10) |
+| -25-0 bps | Slight inversion | Fear (-40) |
+| < -25 bps | Deep inversion | Extreme Fear (-70) |
+
+**Historical Context:**
+- 2019 Inversion: Preceded 2020 recession
+- 2006-2007 Inversion: Preceded 2008 crisis
+- Normal: 100-200 bps spread
+
+**Implementation Notes:**
+- Track level and trend
+- Inversion duration matters (temporary vs sustained)
+- Weight in composite score: 10%
+
+---
+
+## Updated Composite Weights
+
+### New Weight Distribution (8 Indicators)
+
+| Indicator | Original Weight | New Weight | Change |
+|-----------|----------------|------------|--------|
+| **VIX** | 20% | 15% | -5% |
+| **Market Breadth** | 15% | 15% | 0% |
+| **Fear & Greed Index** | 20% | 15% | -5% |
+| **Put/Call Ratio** | 15% | 15% | 0% |
+| **Moving Average Trends** | 10% | 10% | 0% |
+| **DXY (NEW)** | - | 10% | +10% |
+| **Credit Spreads (NEW)** | - | 10% | +10% |
+| **Yield Curve (NEW)** | - | 10% | +10% |
+| **TOTAL** | **80%** | **100%** | **+20%** |
+
+### Rationale for Weight Changes
+
+1. **Reduced VIX (20% → 15%)**: Still the primary fear gauge, but made room for new indicators
+2. **Reduced Fear & Greed (20% → 15%)**: Composite indicator that partially overlaps with new additions
+3. **Added DXY (10%)**: Important risk sentiment indicator for global markets
+4. **Added Credit Spreads (10%)**: Leading indicator of credit stress and economic health
+5. **Added Yield Curve (10%)**: Best recession predictor, provides macro context
+6. **Kept Market Breadth (15%)**: Essential for measuring market participation
+7. **Kept Put/Call Ratio (15%)**: Key options sentiment indicator
+8. **Kept MA Trends (10%)**: Technical trend confirmation
+
+### Benefits of New Composition
+
+✅ **More Balanced**: 8 indicators vs 5, better diversification of signal sources
+✅ **Macro Context**: DXY and Yield Curve add macroeconomic dimension
+✅ **Credit Health**: Credit spreads provide early warning of financial stress
+✅ **Still Manageable**: Not too many indicators to maintain
+✅ **All Free Data Sources**: No additional costs
+✅ **Updated Timeline**: +2 days (13 days total) to implement 3 new indicators
+
+---
+
 ## Architecture Design
 
 ### System Architecture Diagram
