@@ -27,7 +27,7 @@ class YahooFinanceProvider(BaseDataProvider):
     SPY_SYMBOL = "^GSPC"
     PUT_CALL_INDEX = "^PC"
 
-    def __init__(self, config=None, cache_client=None):
+    def __init__(self, config: Optional[MarketMoodConfig] = None, cache_client: Optional[Any] = None):
         """Initialize Yahoo Finance provider.
         
         Args:

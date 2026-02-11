@@ -39,7 +39,7 @@ class FREDProvider(BaseDataProvider):
     BAA_BOND = "BAA"  # Moody's Seasoned BAA Corporate Bond Yield
     SP500 = "SP500"  # S&P 500 Composite Index
 
-    def __init__(self, config=None, cache_client=None):
+    def __init__(self, config: Optional[MarketMoodConfig] = None, cache_client: Optional[Any] = None):
         """Initialize FRED provider.
         
         Args:

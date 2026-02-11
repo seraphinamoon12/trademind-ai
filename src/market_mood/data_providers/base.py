@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Any, Dict
 import logging
+import time
 from src.core.resilience import CircuitBreaker
 from src.market_mood.exceptions import DataProviderError, CircuitBreakerError
 from src.market_mood.models import IndicatorType, IndicatorValue
@@ -118,7 +119,6 @@ class BaseDataProvider(ABC):
         Returns:
             IndicatorValue if successful, None otherwise
         """
-        import time
         
         for attempt in range(max_retries):
             try:
