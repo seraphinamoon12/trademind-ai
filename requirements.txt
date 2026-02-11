@@ -30,6 +30,8 @@ pyyaml>=6.0
 
 # Interactive Brokers
 ibapi>=10.19.0
+ib-insync>=0.9.86
+tzdata>=2025.0
 
 # LangGraph
 langgraph>=1.0.8

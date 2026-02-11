@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     # Safety - Sector Limits
     max_sector_allocation_pct: float = 0.50  # 50% per sector
     
+    # Position Management
+    position_cache_ttl_seconds: int = 30
+    exit_strategy_enabled: bool = True
+    exit_take_profit_pct: float = 0.10  # 10% gain triggers sell
+    exit_stop_loss_pct: float = 0.05  # 5% loss triggers sell
+    max_position_count: int = 10  # Max number of positions to hold
+    
     # Data
     data_provider: str = "yahoo"
     cache_duration_minutes: int = 5
@@ -174,12 +181,26 @@ class Settings(BaseSettings):
     ibkr_real_time_bars: bool = Field(default=False)
     ibkr_delayed_data: bool = Field(default=True)
 
+    # IBKR Insync Configuration (new ib_insync-based broker)
+    ibkr_use_insync: bool = Field(default=True)
+    ibkr_insync_reconnect_enabled: bool = Field(default=True)
+    ibkr_insync_max_reconnect_attempts: int = Field(default=5)
+    ibkr_insync_reconnect_backoff: int = Field(default=5)
+    ibkr_insync_connect_timeout: int = Field(default=10)
+    ibkr_insync_lazy_connect: bool = Field(default=True)
+    ibkr_circuit_breaker_enabled: bool = Field(default=True)
+    ibkr_circuit_breaker_failure_threshold: int = Field(default=5)
+    ibkr_circuit_breaker_cooldown_seconds: int = Field(default=60)
+
     # Database Environment Variables (for building connection string)
     db_user: Optional[str] = Field(default=None)
     db_password: Optional[str] = Field(default=None)
     db_host: Optional[str] = Field(default=None)
     db_port: Optional[str] = Field(default=None)
     db_name: Optional[str] = Field(default=None)
+
+    # TradeMind API Configuration
+    trademind_api_url: str = Field(default="http://localhost:8000")
 
     class Config:
         env_file = ".env"

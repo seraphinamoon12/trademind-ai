@@ -49,19 +49,36 @@ class IBKRIntegration:
             return True
         
         try:
-            # Import the new threaded broker
-            from src.brokers.ibkr.async_broker import IBKRThreadedBroker
+            # Check which broker implementation to use based on settings
+            if settings.ibkr_use_insync:
+                # Use ib_insync-based async broker
+                from src.brokers.ibkr.ibkr_insync_broker import IBKRInsyncBroker
 
-            self._broker = IBKRThreadedBroker(
-                host=settings.ibkr_host,
-                port=settings.ibkr_port,
-                client_id=settings.ibkr_client_id,
-                paper_trading=settings.ibkr_paper_trading
-            )
+                self._broker = IBKRInsyncBroker(
+                    host=settings.ibkr_host,
+                    port=settings.ibkr_port,
+                    client_id=settings.ibkr_client_id,
+                    account=settings.ibkr_account
+                )
 
-            # Don't connect here - do it lazily when needed
-            # This avoids event loop conflicts during startup
-            logger.info("✅ IBKR threaded broker initialized (connection deferred)")
+                # Don't connect here - do it lazily when needed
+                # This avoids event loop conflicts during startup
+                logger.info("✅ IBKR insync broker initialized (connection deferred)")
+            else:
+                # Use the original threaded broker
+                from src.brokers.ibkr.async_broker import IBKRThreadedBroker
+
+                self._broker = IBKRThreadedBroker(
+                    host=settings.ibkr_host,
+                    port=settings.ibkr_port,
+                    client_id=settings.ibkr_client_id,
+                    paper_trading=settings.ibkr_paper_trading
+                )
+
+                # Don't connect here - do it lazily when needed
+                # This avoids event loop conflicts during startup
+                logger.info("✅ IBKR threaded broker initialized (connection deferred)")
+
             return True
 
         except Exception as e:
@@ -83,6 +100,9 @@ class IBKRIntegration:
             return True
 
         try:
+            if self._broker is None:
+                logger.error("❌ Broker is None, cannot connect")
+                return False
             await self._broker.connect()
             self._connected = True
             logger.info(f"✅ Connected to IB Gateway on port {settings.ibkr_port}")
@@ -109,6 +129,8 @@ class IBKRIntegration:
             db = next(get_db())
         
         try:
+            if self._broker is None:
+                raise RuntimeError("Broker not initialized")
             # Get IB account info
             account = await self._broker.get_account()
             
@@ -171,6 +193,8 @@ class IBKRIntegration:
             return None
         
         try:
+            if self._broker is None:
+                raise RuntimeError("Broker not initialized")
             account = await self._broker.get_account()
             return {
                 "account_id": account.account_id,

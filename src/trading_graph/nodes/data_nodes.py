@@ -23,7 +23,7 @@ async def fetch_market_data(state: TradingState) -> FetchMarketDataOutput:
 
     try:
         symbol = state["symbol"]
-        timeframe = state["timeframe"]
+        timeframe = state.get("timeframe", "1d")
 
         provider = YahooFinanceProvider()
         data = provider.get_historical(symbol, period="1y", interval=timeframe)
