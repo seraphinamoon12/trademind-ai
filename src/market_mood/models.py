@@ -22,7 +22,7 @@ class IndicatorValue(BaseModel):
     
     indicator_type: IndicatorType
     value: float
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     source: str
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     
@@ -36,7 +36,7 @@ class MoodScore(BaseModel):
     overall_score: float = Field(ge=0, le=100)  # 0-100 scale
     sentiment: Literal["extreme_fear", "fear", "neutral", "greed", "extreme_greed"]
     components: Dict[IndicatorType, float] = Field(default_factory=dict)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     confidence: float = Field(ge=0, le=1)  # Confidence score based on data availability
     
     @classmethod
@@ -85,7 +85,7 @@ class CacheEntry(BaseModel):
     key: str
     value: Any
     ttl: int
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: Optional[datetime] = None
     
     @property
