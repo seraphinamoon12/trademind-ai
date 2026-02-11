@@ -35,3 +35,4 @@ tzdata>=2025.0
 
 # LangGraph
 langgraph>=1.0.8
+fredapi>=0.5.2
