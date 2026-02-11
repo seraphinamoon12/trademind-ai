@@ -8,6 +8,7 @@ import logging
 from src.core.database import get_db
 from src.market_mood.detector import MarketMoodDetector
 from src.market_mood.config import MarketMoodConfig
+from src.market_mood.backtest import MoodBacktester, run_mood_backtest
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -35,7 +36,9 @@ async def get_root():
             "GET /api/market/mood/signals - Trading signals based on mood",
             "POST /api/market/mood/refresh - Force refresh of indicators",
             "GET /api/market/mood/dashboard - Dashboard overview",
-            "GET /api/market/mood/alerts - Active alerts"
+            "GET /api/market/mood/alerts - Active alerts",
+            "POST /api/market/mood/backtest - Run mood-based backtest",
+            "GET /api/market/mood/backtest/results - Get backtest results"
         ]
     }
 
@@ -344,4 +347,164 @@ async def get_config(db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch config: {str(e)}"
+        )
+
+
+@router.post("/mood/backtest")
+async def run_mood_backtest(
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    symbol: str = Query("SPY", description="Symbol to backtest"),
+    initial_capital: float = Query(100000, ge=1000, description="Initial capital"),
+    db: Session = Depends(get_db)
+):
+    """
+    Run a mood-based backtest.
+
+    Args:
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+        symbol: Trading symbol (default: SPY)
+        initial_capital: Initial capital for backtest (default: 100000)
+
+    Returns:
+        Backtest results with performance metrics
+    """
+    try:
+        backtester = MoodBacktester(
+            start_date=start_date,
+            end_date=end_date,
+            initial_capital=initial_capital,
+            symbol=symbol.upper(),
+        )
+
+        result = backtester.run_backtest()
+
+        return {
+            "status": "success",
+            "backtest_summary": {
+                "symbol": result.start_date,
+                "start_date": result.start_date.isoformat() if result.start_date else None,
+                "end_date": result.end_date.isoformat() if result.end_date else None,
+                "initial_capital": result.initial_capital,
+                "final_capital": result.final_capital,
+                "total_trades": len(result.trades),
+            },
+            "performance_metrics": result.metrics,
+            "buy_and_hold": {
+                "return": result.buy_and_hold_return,
+                "return_pct": result.buy_and_hold_return * 100,
+            },
+            "signals_by_mood": backtester._analyze_signals_by_mood(),
+            "trades_by_mood": backtester._analyze_trades_by_mood(),
+            "trades_count": len(result.trades),
+            "signals_count": len(result.signals),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except ValueError as e:
+        logger.error(f"Invalid date format: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error running backtest: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to run backtest: {str(e)}"
+        )
+
+
+@router.post("/mood/backtest/export")
+async def export_mood_backtest(
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    symbol: str = Query("SPY", description="Symbol to backtest"),
+    initial_capital: float = Query(100000, ge=1000, description="Initial capital"),
+    output_dir: str = Query("backtest_results", description="Output directory"),
+    db: Session = Depends(get_db)
+):
+    """
+    Run a mood-based backtest and export results to files.
+
+    Args:
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+        symbol: Trading symbol (default: SPY)
+        initial_capital: Initial capital for backtest (default: 100000)
+        output_dir: Directory to save output files (default: backtest_results)
+
+    Returns:
+        Dictionary with file paths to exported results
+    """
+    try:
+        backtester = MoodBacktester(
+            start_date=start_date,
+            end_date=end_date,
+            initial_capital=initial_capital,
+            symbol=symbol.upper(),
+        )
+
+        backtester.run_backtest()
+        files = backtester.export_results(output_dir=output_dir)
+
+        return {
+            "status": "success",
+            "message": "Backtest completed and results exported",
+            "files": files,
+            "trades_count": len(backtester.trades),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except ValueError as e:
+        logger.error(f"Invalid date format: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error running backtest: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to run backtest: {str(e)}"
+        )
+
+
+@router.get("/mood/backtest/report")
+async def get_backtest_report(
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    symbol: str = Query("SPY", description="Symbol to backtest"),
+    initial_capital: float = Query(100000, ge=1000, description="Initial capital"),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a comprehensive backtest report.
+
+    Args:
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+        symbol: Trading symbol (default: SPY)
+        initial_capital: Initial capital for backtest (default: 100000)
+
+    Returns:
+        Comprehensive backtest report
+    """
+    try:
+        backtester = MoodBacktester(
+            start_date=start_date,
+            end_date=end_date,
+            initial_capital=initial_capital,
+            symbol=symbol.upper(),
+        )
+
+        backtester.run_backtest()
+        report = backtester.generate_report()
+
+        return {
+            "status": "success",
+            "report": report,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except ValueError as e:
+        logger.error(f"Invalid date format: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error generating report: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate report: {str(e)}"
         )

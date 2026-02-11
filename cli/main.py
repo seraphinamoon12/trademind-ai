@@ -11,6 +11,7 @@ from cli.safety import safety
 from cli.backtest import backtest
 from cli.data import data
 from cli.config import config
+from cli.market_mood import market_mood
 
 
 @click.group()
@@ -44,6 +45,7 @@ cli.add_command(safety)
 cli.add_command(backtest)
 cli.add_command(data)
 cli.add_command(config)
+cli.add_command(market_mood)
 
 
 @cli.command()
@@ -83,17 +85,24 @@ def examples():
   trademind data ingest --symbols AAPL,MSFT,TSLA  # Ingest stock data
   trademind data status            # Check data status
 
-[bold cyan]Config Commands[/bold cyan]
-  trademind config show            # Show all configuration
-  trademind config get trading.max_position_pct   # Get specific value
+ [bold cyan]Config Commands[/bold cyan]
+   trademind config show            # Show all configuration
+   trademind config get trading.max_position_pct   # Get specific value
 
-[bold cyan]Sentiment Configuration[/bold cyan]
-  trademind config sentiment show              # View sentiment settings
-  trademind config sentiment set-source llm    # Use AI sentiment
-  trademind config sentiment set-source technical  # Use technical
-  trademind config sentiment use-llm           # Quick: use LLM
-  trademind config sentiment use-technical     # Quick: use technical
-    """
+ [bold cyan]Market Mood Commands[/bold cyan]
+   trademind market-mood status     # Get current market mood
+   trademind market-mood signals    # Get trading signals
+   trademind market-mood backtest   # Run mood-based backtest
+   trademind market-mood history    # Get mood history
+   trademind market-mood dashboard  # Get comprehensive dashboard
+
+ [bold cyan]Sentiment Configuration[/bold cyan]
+   trademind config sentiment show              # View sentiment settings
+   trademind config sentiment set-source llm    # Use AI sentiment
+   trademind config sentiment set-source technical  # Use technical
+   trademind config sentiment use-llm           # Quick: use LLM
+   trademind config sentiment use-technical     # Quick: use technical
+     """
     
     try:
         from rich.console import Console
